@@ -21,6 +21,15 @@ Amazon.co.jp（FBA）を主軸にPCを月100台組立・販売する会社の基
 - `worker/` … ローカルLLMサーバーで動く取得・実行プログラム
 - `docs/` … 仕様書など
 
+## よく使うコマンド（リポジトリの一番上で実行）
+
+- `npm run db:up` … Docker で PostgreSQL 16 を起動（`.env` が必要。`.env.example` をコピー）
+- `npm run db:test` … テスト用DBを作り直し、マイグレーションと `db/tests/schema_test.sql` を流す。最後に `ALL TESTS PASSED` が出れば成功
+- `npm run db:reset` … 開発用DB（zerobit）を作り直す
+- `npm run dev` / `npm run build` / `npm run lint` … `app/` の Next.js
+
+DBやテストを変えたら `npm run db:test`、画面を変えたら `npm run build` と `npm run lint` が通ることを確かめてから報告する。
+
 ## 必ず守るルール
 
 1. **本物の顧客データを開発に使わない。** 開発環境、テスト、Claude Code との会話には、作ったダミーデータだけを使う。本番のデータを貼り付けない。

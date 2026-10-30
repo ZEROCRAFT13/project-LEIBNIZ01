@@ -1,0 +1,4 @@
+# Windows でも改行を LF にそろえる（SQL やスクリプトが壊れないように）
+* text=auto eol=lf
+*.png binary
+*.ico binary
