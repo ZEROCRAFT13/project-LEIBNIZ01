@@ -144,6 +144,17 @@ export function ConfirmDraftForm({
         </label>
       </div>
 
+      <p className="text-xs text-stone-600">
+        一覧にない部品・仕入先は{" "}
+        <a href="/settings/parts/new" target="_blank" rel="noopener" className="text-blue-800 underline">
+          型番を追加
+        </a>
+        ・
+        <a href="/settings/suppliers/new" target="_blank" rel="noopener" className="text-blue-800 underline">
+          仕入先を追加
+        </a>
+        （別のタブで開きます。追加したら、この画面を読み込み直してください。下書きは残っています）
+      </p>
       <ol className="flex flex-col gap-3">
         {lines.map((l, i) => (
           <li key={i} className="flex flex-col gap-2 rounded-md border border-stone-200 p-3">
@@ -194,7 +205,9 @@ export function ConfirmDraftForm({
       >
         {pending ? "確定中…" : ready ? "確定して仕入れにする" : "部品をすべて選ぶと確定できます"}
       </button>
-      <p className="text-xs text-stone-600">選んだ部品は、このショップの商品名と一緒に覚えて、次の下書きから自動で選びます。</p>
+      <p className="text-xs text-stone-600">
+        選んだ部品は、このショップの商品名と一緒に覚えて、次の下書きから自動で選びます。
+      </p>
     </form>
   );
 }
