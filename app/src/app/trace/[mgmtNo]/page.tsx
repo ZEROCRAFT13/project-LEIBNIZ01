@@ -79,6 +79,16 @@ function Summary({ trace }: { trace: UnitTrace }) {
             <span className="font-mono">{trace.sku.code}</span>　{trace.sku.name}
           </p>
           {trace.notes && <p className="text-sm text-stone-600">メモ：{trace.notes}</p>}
+          {trace.workNotes.length > 0 && (
+            <ul aria-label="組立のメモ" className="text-sm text-stone-700">
+              {trace.workNotes.map((n, i) => (
+                <li key={i}>
+                  ・{n.note}
+                  {n.by && <span className="ml-2 text-xs text-stone-500">{n.by}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <dl className="grid min-w-72 flex-[2] grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-x-6 gap-y-3 text-sm">
           <Field label="販売">

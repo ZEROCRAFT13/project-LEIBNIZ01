@@ -12,6 +12,7 @@ import {
   removeOption,
   removeSlot,
   setSlotQty,
+  setSlotRequired,
   updateSku,
   type SkuResult,
 } from "@/lib/skus";
@@ -78,4 +79,10 @@ export async function addOptionAction(_prev: SkuState, formData: FormData): Prom
 export async function removeOptionAction(_prev: SkuState, formData: FormData): Promise<SkuState> {
   const viewer = await requireManager(back(formData));
   return done(await removeOption(viewer.user.id, n(formData, "slotId"), n(formData, "partModelId")));
+}
+
+/** 枠を「必ず付ける」か「付けなくてもよい」にする */
+export async function slotRequiredAction(_prev: SkuState, formData: FormData): Promise<SkuState> {
+  const viewer = await requireManager(back(formData));
+  return done(await setSlotRequired(viewer.user.id, n(formData, "slotId"), formData.get("required") === "1"));
 }

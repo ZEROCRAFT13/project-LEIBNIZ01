@@ -23,7 +23,7 @@ export type SkuRow = {
 
 const SKU_COLUMNS = `k.id, k.code, k.name, k.list_price AS "listPrice", k.active,
   (SELECT count(*) FROM core.sku_slots s WHERE s.sku_id = k.id)::int AS "slotCount",
-  (SELECT count(*) FROM core.sku_slots s WHERE s.sku_id = k.id
+  (SELECT count(*) FROM core.sku_slots s WHERE s.sku_id = k.id AND s.required AND NOT s.any_part
       AND NOT EXISTS (SELECT 1 FROM core.sku_slot_options o WHERE o.slot_id = s.id))::int AS "emptySlots",
   (SELECT count(*) FROM core.units u WHERE u.sku_id = k.id AND u.status IN ('planned', 'assembling'))::int AS "openUnits"`;
 
@@ -40,7 +40,17 @@ export type SlotOption = {
   inStock: number;
 };
 
-export type SlotView = { id: number; slot: string; category: string; qty: number; options: SlotOption[] };
+export type SlotView = {
+  id: number;
+  slot: string;
+  category: string;
+  qty: number;
+  /** false なら付けなくても組立を完了できる */
+  required: boolean;
+  /** true なら自由枠（登録済みの部品なら何でも） */
+  anyPart: boolean;
+  options: SlotOption[];
+};
 export type SkuDetail = SkuRow & { slots: SlotView[] };
 
 export async function getSkuDetail(id: number): Promise<SkuDetail | null> {
@@ -48,7 +58,7 @@ export async function getSkuDetail(id: number): Promise<SkuDetail | null> {
   const [sku] = await query<SkuRow>(`SELECT ${SKU_COLUMNS} FROM core.skus k WHERE k.id = $1`, [id]);
   if (!sku) return null;
   const slots = await query<Omit<SlotView, "options">>(
-    `SELECT id, slot, category, qty FROM core.sku_slots WHERE sku_id = $1 ORDER BY sort_order, id`,
+    `SELECT id, slot, category, qty, required, any_part AS "anyPart" FROM core.sku_slots WHERE sku_id = $1 ORDER BY sort_order, id`,
     [id],
   );
   const options = await query<SlotOption & { slotId: number }>(
@@ -113,15 +123,24 @@ export async function createSku(actorId: number, input: SkuInput, copyFromId: nu
     );
     const id = r.rows[0].id;
     if (copyFromId) {
-      const src = await client.query<{ id: number; slot: string; category: string; qty: number; sort_order: number }>(
-        `SELECT id, slot, category, qty, sort_order FROM core.sku_slots WHERE sku_id = $1 ORDER BY sort_order, id`,
+      const src = await client.query<{
+        id: number;
+        slot: string;
+        category: string;
+        qty: number;
+        sort_order: number;
+        required: boolean;
+        any_part: boolean;
+      }>(
+        `SELECT id, slot, category, qty, sort_order, required, any_part FROM core.sku_slots WHERE sku_id = $1 ORDER BY sort_order, id`,
         [copyFromId],
       );
       if (src.rowCount === 0) throw new SkuError("もとにする機種が見つからないか、枠がありません。");
       for (const s of src.rows) {
         const n = await client.query<{ id: number }>(
-          `INSERT INTO core.sku_slots (sku_id, slot, category, qty, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-          [id, s.slot, s.category, s.qty, s.sort_order],
+          `INSERT INTO core.sku_slots (sku_id, slot, category, qty, sort_order, required, any_part)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [id, s.slot, s.category, s.qty, s.sort_order, s.required, s.any_part],
         );
         await client.query(
           `INSERT INTO core.sku_slot_options (slot_id, part_model_id)
@@ -132,8 +151,9 @@ export async function createSku(actorId: number, input: SkuInput, copyFromId: nu
     } else {
       for (const [i, s] of DEFAULT_SLOTS.entries()) {
         await client.query(
-          `INSERT INTO core.sku_slots (sku_id, slot, category, qty, sort_order) VALUES ($1, $2, $3, 1, $4)`,
-          [id, s.slot, s.category, i + 1],
+          `INSERT INTO core.sku_slots (sku_id, slot, category, qty, sort_order, required, any_part)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [id, s.slot, s.category, s.qty, i + 1, s.required, s.anyPart],
         );
       }
     }
@@ -161,11 +181,11 @@ export async function updateSku(actorId: number, id: number, input: SkuInput): P
 export async function addSlot(actorId: number, skuId: number, input: SlotInput): Promise<SkuResult> {
   return run(actorId, async (client) => {
     const r = await client.query<{ id: number }>(
-      `INSERT INTO core.sku_slots (sku_id, slot, category, qty, sort_order)
-       SELECT k.id, $2, $3, $4, coalesce((SELECT max(sort_order) FROM core.sku_slots WHERE sku_id = k.id), 0) + 1
+      `INSERT INTO core.sku_slots (sku_id, slot, category, qty, required, any_part, sort_order)
+       SELECT k.id, $2, $3, $4, $5, $6, coalesce((SELECT max(sort_order) FROM core.sku_slots WHERE sku_id = k.id), 0) + 1
          FROM core.skus k WHERE k.id = $1
        RETURNING id`,
-      [skuId, input.slot, input.category, input.qty],
+      [skuId, input.slot, input.category, input.qty, input.required, input.anyPart],
     );
     return r.rowCount === 1
       ? { ok: true, id: r.rows[0].id, message: `枠「${input.slot}」を足しました。` }
@@ -178,6 +198,16 @@ export async function setSlotQty(actorId: number, slotId: number, qty: number): 
   return run(actorId, async (client) => {
     const r = await client.query(`UPDATE core.sku_slots SET qty = $2 WHERE id = $1`, [slotId, qty]);
     return r.rowCount === 1 ? { ok: true, id: slotId, message: "数を変えました。" } : { ok: false, message: "その枠はありません。" };
+  });
+}
+
+/** 「必ず付ける」か「付けなくてもよい」かを変える（組立中でも変えられる） */
+export async function setSlotRequired(actorId: number, slotId: number, required: boolean): Promise<SkuResult> {
+  return run(actorId, async (client) => {
+    const r = await client.query(`UPDATE core.sku_slots SET required = $2 WHERE id = $1`, [slotId, required]);
+    return r.rowCount === 1
+      ? { ok: true, id: slotId, message: required ? "「必ず付ける」にしました。" : "「付けなくてもよい」にしました。" }
+      : { ok: false, message: "その枠はありません。" };
   });
 }
 
@@ -222,7 +252,7 @@ export async function slotsForPartModel(partModelId: number): Promise<{
     `SELECT s.id AS "slotId", k.id AS "skuId", k.code AS "skuCode", s.slot,
             EXISTS (SELECT 1 FROM core.sku_slot_options o WHERE o.slot_id = s.id AND o.part_model_id = m.id) AS used
        FROM core.part_models m
-       JOIN core.sku_slots s ON s.category = m.category
+       JOIN core.sku_slots s ON s.category = m.category AND NOT s.any_part
        JOIN core.skus k ON k.id = s.sku_id
       WHERE m.id = $1 AND (k.active OR EXISTS (SELECT 1 FROM core.sku_slot_options o WHERE o.slot_id = s.id AND o.part_model_id = m.id))
       ORDER BY k.code, s.sort_order`,

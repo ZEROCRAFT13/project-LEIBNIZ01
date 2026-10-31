@@ -9,6 +9,7 @@ import {
   removeOptionAction,
   removeSlotAction,
   slotQtyAction,
+  slotRequiredAction,
   updateSkuAction,
   type SkuState,
 } from "@/app/settings/skus/actions";
@@ -56,7 +57,13 @@ export function NewSkuForm({ skus }: { skus: { id: number; code: string; name: s
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           名前
-          <input name="name" value={v.name} maxLength={100} onChange={(e) => set({ name: e.target.value })} className={inputClass} />
+          <input
+            name="name"
+            value={v.name}
+            maxLength={100}
+            onChange={(e) => set({ name: e.target.value })}
+            className={inputClass}
+          />
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           定価（税込・あれば）
@@ -70,7 +77,12 @@ export function NewSkuForm({ skus }: { skus: { id: number; code: string; name: s
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           もとにする機種（枠と使ってよい型番を写す）
-          <select name="copyFrom" value={v.copyFrom} onChange={(e) => set({ copyFrom: e.target.value })} className={inputClass}>
+          <select
+            name="copyFrom"
+            value={v.copyFrom}
+            onChange={(e) => set({ copyFrom: e.target.value })}
+            className={inputClass}
+          >
             <option value="">使わない（CPU〜OS の空の枠で作る）</option>
             {skus.map((s) => (
               <option key={s.id} value={s.id}>
@@ -156,10 +168,19 @@ export function SlotCard({
   locked,
 }: {
   skuId: number;
-  slot: { id: number; slot: string; category: string; qty: number; options: Option[] };
+  slot: {
+    id: number;
+    slot: string;
+    category: string;
+    qty: number;
+    required: boolean;
+    anyPart: boolean;
+    options: Option[];
+  };
   models: Model[];
   locked: boolean;
 }) {
+  const [reqState, setRequired, settingRequired] = useActionState<SkuState, FormData>(slotRequiredAction, null);
   const [addState, add, adding] = useActionState<SkuState, FormData>(addOptionAction, null);
   const [removeState, remove, removing] = useActionState<SkuState, FormData>(removeOptionAction, null);
   const [qtyState, setQty, settingQty] = useActionState<SkuState, FormData>(slotQtyAction, null);
@@ -179,7 +200,9 @@ export function SlotCard({
   return (
     <section
       aria-label={`枠 ${slot.slot}`}
-      className={`flex flex-col gap-3 rounded-lg border bg-white p-4 ${slot.options.length === 0 ? "border-amber-500" : "border-stone-300"}`}
+      className={`flex flex-col gap-3 rounded-lg border bg-white p-4 ${
+        slot.options.length === 0 && slot.required && !slot.anyPart ? "border-amber-500" : "border-stone-300"
+      }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-bold">
@@ -187,8 +210,20 @@ export function SlotCard({
           {label(slotLabel, slot.slot) !== slot.slot && (
             <span className="ml-2 font-mono text-sm font-normal text-stone-500">{slot.slot}</span>
           )}
-          {label(partCategoryLabel, slot.category) !== label(slotLabel, slot.slot) && (
-            <span className="ml-2 text-sm font-normal text-stone-600">（{label(partCategoryLabel, slot.category)}）</span>
+          {!slot.anyPart && label(partCategoryLabel, slot.category) !== label(slotLabel, slot.slot) && (
+            <span className="ml-2 text-sm font-normal text-stone-600">
+              （{label(partCategoryLabel, slot.category)}）
+            </span>
+          )}
+          <span
+            className={`ml-2 rounded px-2 py-0.5 text-xs font-medium ${
+              slot.required ? "bg-stone-800 text-white" : "bg-stone-200 text-stone-800"
+            }`}
+          >
+            {slot.required ? "必ず付ける" : "付けなくてもよい"}
+          </span>
+          {slot.anyPart && (
+            <span className="ml-1 rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-900">自由枠</span>
           )}
         </h3>
         <form action={setQty} className="flex items-center gap-2 text-sm">
@@ -213,12 +248,24 @@ export function SlotCard({
         </form>
       </div>
 
-      {slot.options.length === 0 ? (
-        <p className="text-sm text-amber-900">使ってよい型番がありません。この枠の部品を組立で読むと止まります。</p>
+      {slot.anyPart ? (
+        <p className="text-sm text-stone-700">
+          登録済みの部品なら、種類を問わず {slot.qty}
+          個まで付けられます（Wi-Fiカード、追加のSSDなど）。型番を決める必要はありません。
+        </p>
+      ) : slot.options.length === 0 ? (
+        <p className={`text-sm ${slot.required ? "text-amber-900" : "text-stone-600"}`}>
+          {slot.required
+            ? "使ってよい型番がありません。この枠の部品を組立で読むと止まります。"
+            : "使ってよい型番がまだありません（付けない機種なら、このままで大丈夫です）。"}
+        </p>
       ) : (
         <ul className="flex flex-col divide-y divide-stone-100 rounded-md border border-stone-200 text-sm">
           {slot.options.map((o) => (
-            <li key={o.partModelId} className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 ${o.active ? "" : "opacity-60"}`}>
+            <li
+              key={o.partModelId}
+              className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 ${o.active ? "" : "opacity-60"}`}
+            >
               <Link href={`/settings/parts/${o.partModelId}`} className="text-blue-800 underline">
                 {o.name}
               </Link>
@@ -240,34 +287,47 @@ export function SlotCard({
         </ul>
       )}
 
-      <form action={add} className="flex flex-wrap items-end gap-2">
+      {!slot.anyPart && (
+        <form action={add} className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="slotId" value={slot.id} />
+          <input type="hidden" name="back" value={back} />
+          <label className="flex min-w-60 flex-1 flex-col gap-1 text-sm">
+            使ってよい型番を足す
+            <select
+              name="partModelId"
+              value={pick}
+              onChange={(e) => setPick(e.target.value)}
+              aria-label={`${slot.slot} に足す型番`}
+              className={inputClass}
+            >
+              <option value="">
+                {candidates.length === 0
+                  ? `足せる${label(partCategoryLabel, slot.category)}の型番がありません`
+                  : "選んでください"}
+              </option>
+              {candidates.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}（{m.maker} {m.modelNo}）
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" disabled={adding || pick === ""} className={buttonClass}>
+            足す
+          </button>
+        </form>
+      )}
+
+      <form action={setRequired} className="text-sm">
         <input type="hidden" name="slotId" value={slot.id} />
         <input type="hidden" name="back" value={back} />
-        <label className="flex min-w-60 flex-1 flex-col gap-1 text-sm">
-          使ってよい型番を足す
-          <select
-            name="partModelId"
-            value={pick}
-            onChange={(e) => setPick(e.target.value)}
-            aria-label={`${slot.slot} に足す型番`}
-            className={inputClass}
-          >
-            <option value="">
-              {candidates.length === 0 ? `足せる${label(partCategoryLabel, slot.category)}の型番がありません` : "選んでください"}
-            </option>
-            {candidates.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}（{m.maker} {m.modelNo}）
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" disabled={adding || pick === ""} className={buttonClass}>
-          足す
+        <input type="hidden" name="required" value={slot.required ? "0" : "1"} />
+        <button type="submit" disabled={settingRequired} className="text-blue-800 underline">
+          {slot.required ? "「付けなくてもよい」にする" : "「必ず付ける」にする（Amazon 用など、構成を固定する機種）"}
         </button>
       </form>
 
-      <Message state={latest(addState, removeState, qtyState, delState)} />
+      <Message state={latest(addState, removeState, qtyState, delState, reqState)} />
 
       {!locked && (
         <details className="text-sm">
@@ -288,18 +348,36 @@ export function SlotCard({
 // 枠を足す（ファンなど）
 export function AddSlotForm({ skuId }: { skuId: number }) {
   const [state, action, pending] = useActionState<SkuState, FormData>(addSlotAction, null);
-  const [v, setV] = useState({ slot: "", category: "", qty: "1" });
+  const empty = { slot: "", category: "", qty: "1", optional: false };
+  const [v, setV] = useState(empty);
   const set = (patch: Partial<typeof v>) => setV((x) => ({ ...x, ...patch }));
   // 足せたら欄を空に戻す
   const [seen, setSeen] = useState(state);
   if (state !== seen) {
     setSeen(state);
-    if (state?.ok) setV({ slot: "", category: "", qty: "1" });
+    if (state?.ok) setV(empty);
   }
   return (
     <form action={action} className="flex flex-col gap-3">
       <input type="hidden" name="skuId" value={skuId} />
       <input type="hidden" name="back" value={`/settings/skus/${skuId}`} />
+      <div className="flex flex-wrap gap-2 text-sm">
+        <span className="self-center text-stone-600">よく使う枠：</span>
+        <button
+          type="button"
+          onClick={() => setV({ slot: "FAN", category: "fan", qty: "3", optional: true })}
+          className="h-9 rounded-md border border-stone-400 px-3"
+        >
+          ケースファン
+        </button>
+        <button
+          type="button"
+          onClick={() => setV({ slot: "EXTRA", category: "any", qty: "5", optional: true })}
+          className="h-9 rounded-md border border-stone-400 px-3"
+        >
+          自由枠（何でも）
+        </button>
+      </div>
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-sm font-medium">
           枠の名前（英大文字）
@@ -314,17 +392,23 @@ export function AddSlotForm({ skuId }: { skuId: number }) {
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           部品の種類
-          <select name="category" value={v.category} onChange={(e) => set({ category: e.target.value })} className={inputClass}>
+          <select
+            name="category"
+            value={v.category}
+            onChange={(e) => set({ category: e.target.value })}
+            className={inputClass}
+          >
             <option value="">選んでください</option>
             {PART_CATEGORIES.map((c) => (
               <option key={c} value={c}>
                 {partCategoryLabel[c]}
               </option>
             ))}
+            <option value="any">なんでも（自由枠）</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
-          数
+          数（自由枠と「付けなくてもよい」枠は上限）
           <input
             name="qty"
             value={v.qty}
@@ -332,6 +416,16 @@ export function AddSlotForm({ skuId }: { skuId: number }) {
             onChange={(e) => set({ qty: e.target.value })}
             className={`${inputClass} w-20 text-right`}
           />
+        </label>
+        <label className="flex h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="optional"
+            checked={v.optional}
+            onChange={(e) => set({ optional: e.target.checked })}
+            className="h-5 w-5"
+          />
+          付けなくてもよい
         </label>
         <button type="submit" disabled={pending} className={buttonClass}>
           枠を足す
@@ -364,7 +458,9 @@ export function PartSkuPanel({
   return (
     <div className="flex flex-col gap-3">
       {using.length === 0 ? (
-        <p className="text-sm text-amber-900">まだどの機種でも使えません。組立で使うには、下で機種の枠に足してください。</p>
+        <p className="text-sm text-amber-900">
+          まだどの機種でも使えません。組立で使うには、下で機種の枠に足してください。
+        </p>
       ) : (
         <ul className="flex flex-col divide-y divide-stone-100 rounded-md border border-stone-200 text-sm">
           {using.map((u) => (

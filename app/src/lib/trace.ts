@@ -96,6 +96,8 @@ export type UnitTrace = {
   status: string;
   sku: { code: string; name: string };
   notes: string | null;
+  /** 組立のときに残したメモ（部品として登録していないもの・作業） */
+  workNotes: { note: string; by: string | null; at: Date }[];
   assembledAt: Date | null;
   assembledBy: string | null;
   inspectedAt: Date | null;
@@ -344,6 +346,13 @@ export async function getUnitTrace(rawMgmtNo: string): Promise<UnitTrace | null>
     status: unit.status,
     sku: { code: unit.sku_code, name: unit.sku_name },
     notes: unit.notes,
+    workNotes: await query<{ note: string; by: string | null; at: Date }>(
+      `SELECT n.note, us.display_name AS by, n.created_at AS at
+         FROM core.unit_notes n LEFT JOIN core.users us ON us.id = n.created_by
+        WHERE n.unit_id = $1 AND n.removed_at IS NULL
+        ORDER BY n.created_at, n.id`,
+      [unit.id],
+    ),
     assembledAt: unit.assembled_at,
     assembledBy: unit.assembled_by,
     inspectedAt: unit.inspected_at,

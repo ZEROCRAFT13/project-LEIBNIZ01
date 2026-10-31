@@ -16,8 +16,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0008_purchase_drafts.sql` | 仕入れの下書き（メールから読み取った項目だけ。本文は残さない）と、ショップの商品名と型番の対応 |
 | `migrations/0009_purchase_draft_tax.sql` | 下書きに「うち消費税」（メールに書いてあればその額を使う） |
 | `migrations/0010_sku_composition.sql` | 構成表を画面から直すための決まり（枠と同じ種類の型番だけ、組立中の機種の枠は消せない、使ってよい型番の付け外しを監査ログへ） |
+| `migrations/0011_optional_slots_and_notes.sql` | 枠の「付けなくてもよい」と「自由枠」、個体のメモ（unit_notes） |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（97項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（104項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 3つの区画
 

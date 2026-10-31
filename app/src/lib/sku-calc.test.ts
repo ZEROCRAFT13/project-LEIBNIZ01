@@ -36,7 +36,18 @@ describe("枠", () => {
   it("名前は大文字・空白やハイフンは _ にそろえる", () => {
     expect(parseSlotInput({ slot: "fan front", category: "fan", qty: "３" })).toEqual({
       ok: true,
-      value: { slot: "FAN_FRONT", category: "fan", qty: 3 },
+      value: { slot: "FAN_FRONT", category: "fan", qty: 3, required: true, anyPart: false },
+    });
+  });
+
+  it("「付けなくてもよい」と自由枠（種類 any）", () => {
+    expect(parseSlotInput({ slot: "FAN", category: "fan", qty: "3", optional: "on" })).toMatchObject({
+      ok: true,
+      value: { required: false, anyPart: false },
+    });
+    expect(parseSlotInput({ slot: "EXTRA", category: "any", qty: "5", optional: "on" })).toEqual({
+      ok: true,
+      value: { slot: "EXTRA", category: "other", qty: 5, required: false, anyPart: true },
     });
   });
 
@@ -51,7 +62,10 @@ describe("枠", () => {
     expect(!r.ok && r.errors).toContain(message);
   });
 
-  it("ひな形はふつうのゲーミングPCの9枠", () => {
-    expect(DEFAULT_SLOTS.map((s) => s.slot)).toEqual(["CPU", "GPU", "MB", "MEMORY", "SSD", "PSU", "COOLER", "CASE", "OS"]);
+  it("ひな形はふつうのゲーミングPCの9枠と、付けなくてもよいケースファン・自由枠", () => {
+    expect(DEFAULT_SLOTS.map((s) => s.slot)).toEqual([
+      "CPU", "GPU", "MB", "MEMORY", "SSD", "PSU", "COOLER", "CASE", "OS", "FAN", "EXTRA",
+    ]);
+    expect(DEFAULT_SLOTS.filter((s) => !s.required).map((s) => s.slot)).toEqual(["FAN", "EXTRA"]);
   });
 });

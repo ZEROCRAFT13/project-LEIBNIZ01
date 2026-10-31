@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ScanConsole } from "@/components/assembly/scan-console";
+import { UnitNotes } from "@/components/assembly/unit-notes";
 import { Loading } from "@/components/ui";
 import { getAssembly, type AssemblySlot } from "@/lib/assembly";
 import { label, unitStatusLabel } from "@/lib/labels";
@@ -110,6 +111,12 @@ async function AssemblyUnit({
           <SlotRow key={s.slot} slot={s} isNext={view.canScan && s.slot === view.nextSlot} />
         ))}
       </ul>
+
+      <UnitNotes
+        mgmtNo={view.mgmtNo}
+        notes={view.notes.map(({ id, note, by }) => ({ id, note, by }))}
+        editable={view.canScan}
+      />
     </>
   );
 }
@@ -124,14 +131,21 @@ function SlotRow({ slot, isNext }: { slot: AssemblySlot; isNext: boolean }) {
       <span
         aria-hidden="true"
         className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-          slot.done ? "bg-blue-700 text-white" : "bg-stone-200 text-stone-700"
+          slot.done || (!slot.required && slot.installed.length > 0) ? "bg-blue-700 text-white" : "bg-stone-200 text-stone-700"
         }`}
       >
-        {slot.done ? "✓" : ""}
+        {slot.done || (!slot.required && slot.installed.length > 0) ? "✓" : slot.required ? "" : "－"}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex items-center justify-between gap-2">
-          <span className="font-bold">{slot.label}</span>
+          <span className="font-bold">
+            {slot.label}
+            {!slot.required && (
+              <span className="ml-2 rounded bg-stone-200 px-2 py-0.5 text-xs font-medium text-stone-700">
+                付けなくてもよい{slot.qty > 1 ? `・${slot.qty}個まで` : ""}
+              </span>
+            )}
+          </span>
           {isNext && <span className="text-sm font-bold text-blue-800">次はこれ</span>}
           {slot.done && <span className="sr-only">取り付け済み</span>}
         </span>

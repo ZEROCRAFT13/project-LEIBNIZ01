@@ -39,14 +39,17 @@ afterAll(async () => {
 });
 
 describe("機種を作る", () => {
-  it("ひな形から作ると、CPU〜OS の9枠が空でできる", async () => {
+  it("ひな形から作ると、CPU〜OS の9枠（必ず付ける）と、ケースファン・自由枠（付けなくてもよい）が空でできる", async () => {
     const r = await createSku(owner, sku({ code: "ZB-NEW-1", name: "新しい機種" }), null);
     if (!r.ok) throw new Error(r.message);
     const d = await getSkuDetail(r.id);
-    expect(d?.slots.map((s) => [s.slot, s.qty, s.options.length])).toEqual(
-      ["CPU", "GPU", "MB", "MEMORY", "SSD", "PSU", "COOLER", "CASE", "OS"].map((s) => [s, 1, 0]),
-    );
-    expect((await listSkusWithSummary()).find((k) => k.id === r.id)).toMatchObject({ slotCount: 9, emptySlots: 9 });
+    expect(d?.slots.map((s) => [s.slot, s.qty, s.required, s.anyPart, s.options.length])).toEqual([
+      ...["CPU", "GPU", "MB", "MEMORY", "SSD", "PSU", "COOLER", "CASE", "OS"].map((s) => [s, 1, true, false, 0]),
+      ["FAN", 3, false, false, 0],
+      ["EXTRA", 5, false, true, 0],
+    ]);
+    // 型番のない枠の警告は「必ず付ける」枠だけ数える
+    expect((await listSkusWithSummary()).find((k) => k.id === r.id)).toMatchObject({ slotCount: 11, emptySlots: 9 });
   });
 
   it("もとにする機種を選ぶと、枠と使ってよい型番を写す（もとの機種は変わらない）", async () => {
@@ -114,9 +117,9 @@ describe("構成表を直す", () => {
   });
 
   it("枠を足す・数を変える・消す", async () => {
-    const r = await addSlot(owner, skuId, { slot: "FAN_FRONT", category: "fan", qty: 2 });
+    const r = await addSlot(owner, skuId, { slot: "FAN_FRONT", category: "fan", qty: 2, required: true, anyPart: false });
     if (!r.ok) throw new Error(r.message);
-    expect(await addSlot(owner, skuId, { slot: "FAN_FRONT", category: "fan", qty: 1 })).toEqual({
+    expect(await addSlot(owner, skuId, { slot: "FAN_FRONT", category: "fan", qty: 1, required: true, anyPart: false })).toEqual({
       ok: false,
       message: "同じ名前の枠が、もうあります。",
     });
