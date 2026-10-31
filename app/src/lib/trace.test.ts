@@ -16,7 +16,7 @@ describe("入力をそろえる", () => {
     ["2609-0118", "ZB-2609-0118"],
     ["ZB26090118", "ZB-2609-0118"],
     ["ZBー2609ー0118", "ZB-2609-0118"],
-    [" 250-7712045-3390 ", "250-7712045-3390"],
+    [" 250-7712045-0003390 ", "250-7712045-0003390"],
     ["602-v531-4471", "602-V531-4471"],
   ])("%s → %s", (input, expected) => {
     expect(normalizeQuery(input)).toBe(expected);
@@ -59,7 +59,7 @@ describe("検索", () => {
   });
 
   it("Amazonの注文番号から個体が分かる", async () => {
-    const hits = await searchUnits("250-7712045-3390");
+    const hits = await searchUnits("250-7712045-0003390");
     expect(hits.map((h) => [h.mgmtNo, h.matchedBy])).toEqual([["ZB-2609-0118", "order"]]);
   });
 
@@ -89,7 +89,7 @@ describe("個体1台の履歴", () => {
     expect(t.parts.map((p) => p.slot)).toEqual(["CPU", "GPU", "MB", "MEMORY", "SSD", "PSU", "COOLER", "CASE", "OS"]);
     expect(t.totals).toEqual({ partsCostInclTax: 269280, boxesKept: 3 });
     expect(t.warranty).toMatchObject({ start: "2026-09-23", end: "2028-09-23", months: 24 });
-    expect(t.order).toMatchObject({ externalOrderNo: "250-7712045-3390", isFba: true, linkMethod: "product_registration" });
+    expect(t.order).toMatchObject({ externalOrderNo: "250-7712045-0003390", isFba: true, linkMethod: "product_registration" });
     expect(t.registration?.verification).toBe("verified");
     expect(t.assembledBy).toBe("佐藤（バイト）");
     expect(t.inspectedBy).toBe("代表");

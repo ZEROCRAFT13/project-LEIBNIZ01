@@ -71,6 +71,11 @@ async function Menu({ searchParams }: { searchParams: PageProps<"/">["searchPara
             title: "FBA 納品",
             text: "出荷待ちの個体を納品にまとめ、Amazon の出荷の番号と送り状番号を記録する。受領数を入れると FBA 在庫になる",
           },
+          {
+            href: "/fbm",
+            title: "自社出荷",
+            text: "Amazon の自社出荷の注文に、出荷待ちの個体を管理番号で結びつけ、送り状番号を入れて発送する",
+          },
         ]
       : []),
     ...(canManage(viewer)

@@ -21,8 +21,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0013_inspection_stages.sql` | 検品の3段階（①組立状態 ②Windows とベンチマーク ③出荷直前）、写真（inspection_photos）、検品担当の役割、温度・騒音の上限とチェック項目の初期値（settings） |
 | `migrations/0014_amazon_fulfillment.sql` | 機種ごとの Amazon の出荷方法（FBA／自社出荷／両方）と、出品（amazon_listings：セラー SKU と ASIN。消さずに止める） |
 | `migrations/0015_fba_inbound.sql` | FBA 納品の記録（下書き→発送→受領中→完了）。納品に入れられるのは出荷待ちで FBA の機種の個体だけ。発送・完了で個体の状態をトリガーが変える。受領数（fba_shipment_receipts） |
+| `migrations/0016_fbm_shipping.sql` | Amazon の自社出荷：注文の出荷期限・運送会社・発送・出荷通知の記録、個体ごとの送り状番号（order_units.tracking_no）。出荷待ちの個体だけ結びつけられ、発送で個体は「出荷済み」になる。注文番号の形（3-7-7けた）。注文と結びつきは消せない |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（165項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（181項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 3つの区画
 
