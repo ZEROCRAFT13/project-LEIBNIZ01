@@ -85,9 +85,9 @@ SET app.actor_user_id = '2';
 INSERT INTO core.units (sku_id, assembled_by) VALUES (1, 2), (1, 2), (2, 2);
 SELECT pg_temp.check(
   (SELECT array_agg(mgmt_no ORDER BY id) FROM core.units)
-    = ARRAY['ZB-' || to_char(current_date,'YYMM') || '-0001',
-            'ZB-' || to_char(current_date,'YYMM') || '-0002',
-            'ZB-' || to_char(current_date,'YYMM') || '-0003'],
+    = ARRAY['ZB-' || to_char(core.today_jst(),'YYMM') || '-0001',
+            'ZB-' || to_char(core.today_jst(),'YYMM') || '-0002',
+            'ZB-' || to_char(core.today_jst(),'YYMM') || '-0003'],
   '管理番号が年月ごとの連番で発行される');
 SELECT pg_temp.check(
   (SELECT bool_and(length(qr_token) >= 24) AND count(DISTINCT qr_token) = 3 FROM core.units),
@@ -156,6 +156,20 @@ SELECT pg_temp.check(
   (SELECT warranty_start = '2026-10-05' FROM core.v_unit_warranty WHERE unit_id = 2),
   '注文が分からない個体は自社の出荷日から起算');
 
+-- DBの時刻設定が UTC でも、日本時間の深夜の注文は日本の日付で数える（0003）
+SET TIME ZONE 'UTC';
+INSERT INTO core.orders (channel, external_order_no, is_fba, ordered_at, total_amount)
+VALUES ('amazon', '250-0000000-0002', true, '2026-09-30 01:00+09', 349800);
+INSERT INTO core.order_lines (order_id, sku_id, description, qty, unit_price)
+SELECT id, 1, 'ZB-G5070-R7', 1, 349800 FROM core.orders WHERE external_order_no = '250-0000000-0002';
+INSERT INTO core.order_units (order_id, unit_id, link_method)
+SELECT id, 2, 'support' FROM core.orders WHERE external_order_no = '250-0000000-0002';
+SELECT pg_temp.check(
+  (SELECT warranty_start = '2026-09-30' FROM core.v_unit_warranty WHERE unit_id = 2),
+  '日本時間 9/30 1:00 の注文は、DBがUTCでも 9/30 起算になる');
+SELECT pg_temp.check(core.next_mgmt_no('2026-10-01') LIKE 'ZB-2610-%', '管理番号の年月は渡した日付（日本時間）で決まる');
+RESET TIME ZONE;
+
 -- 個人情報はアプリ本体から見えない
 SELECT pg_temp.expect_error($$SELECT * FROM pii.customer_profiles$$, 'アプリ本体が個人情報の表を読む');
 
@@ -219,10 +233,10 @@ SELECT pg_temp.check((SELECT count(*) FROM core.claim_ai_job('gpu-1')) = 0, '取
 -- FBA在庫の残り日数と組立開始の期限
 INSERT INTO core.fba_inventory_snapshots (captured_at, sku_id, fulfillable, inbound) VALUES (now(), 1, 2, 0);
 INSERT INTO core.sku_daily_metrics (metric_date, sku_id, channel, units_ordered)
-SELECT current_date - g, 1, 'amazon', CASE WHEN g % 7 = 0 THEN 0 ELSE 1 END
+SELECT core.today_jst() - g, 1, 'amazon', CASE WHEN g % 7 = 0 THEN 0 ELSE 1 END
 FROM generate_series(0, 13) AS g;
 SELECT pg_temp.check(
-  (SELECT per_day = 0.86 AND days_left = 2.3 AND start_assembly_by = current_date + 2 - 5
+  (SELECT per_day = 0.86 AND days_left = 2.3 AND start_assembly_by = core.today_jst() + 2 - 5
      FROM core.v_fba_runway WHERE sku_code = 'ZB-G5070-R7'),
   'FBA在庫: 1日0.86台、残り2.3日、組立開始の期限は3日前（すでに遅れ）');
 
