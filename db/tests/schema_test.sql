@@ -507,4 +507,33 @@ SELECT pg_temp.check(
      AND row_id = (SELECT s.id::text FROM core.sku_slots s JOIN core.skus k ON k.id = s.sku_id WHERE k.code = 'ZB-TEST-1')),
   '使ってよい型番の追加・削除が監査ログに残る');
 
+-- ---------- 付けなくてもよい枠・自由枠・個体のメモ（0011） ----------
+SET ROLE zb_app;
+INSERT INTO core.sku_slots (sku_id, slot, category, qty, required, any_part) VALUES (1, 'EXTRA', 'other', 5, false, true);
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.sku_slots (sku_id, slot, category, any_part) VALUES (1, 'EXTRA2', 'gpu', true)$$,
+  '自由枠の種類を other 以外にする');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.sku_slot_options (slot_id, part_model_id)
+    SELECT id, 2 FROM core.sku_slots WHERE sku_id = 1 AND slot = 'EXTRA'$$,
+  '自由枠に使ってよい型番を決める');
+INSERT INTO core.part_items (part_model_id, serial_no, cost_excl_tax) VALUES (4, 'FREE-001', 1000);
+INSERT INTO core.unit_parts (unit_id, part_item_id, slot, installed_by)
+SELECT 2, id, 'EXTRA', 2 FROM core.part_items WHERE serial_no = 'FREE-001';
+SELECT pg_temp.check(
+  (SELECT status = 'installed' FROM core.part_items WHERE serial_no = 'FREE-001'),
+  '自由枠には、構成表にない型番でも理由なしで付けられる');
+SELECT pg_temp.check(
+  (SELECT bool_and(required) FROM core.sku_slots WHERE slot <> 'EXTRA'),
+  'これまでの枠は「必ず付ける」のまま');
+
+INSERT INTO core.unit_notes (unit_id, note, created_by) VALUES (2, 'LEDテープを追加', 2);
+SELECT pg_temp.expect_error($$INSERT INTO core.unit_notes (unit_id, note) VALUES (2, '   ')$$, '空のメモ');
+SELECT pg_temp.expect_error($$DELETE FROM core.unit_notes$$, 'アプリ本体がメモを削除（取り消しにする）');
+UPDATE core.unit_notes SET removed_at = now(), removed_by = 1 WHERE note = 'LEDテープを追加';
+RESET ROLE;
+SELECT pg_temp.check(
+  (SELECT count(*) = 2 FROM audit.log WHERE table_name = 'core.unit_notes'),
+  'メモの追加と取り消しが監査ログに残る');
+
 \echo ALL TESTS PASSED

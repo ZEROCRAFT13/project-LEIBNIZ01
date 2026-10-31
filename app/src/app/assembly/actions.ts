@@ -2,7 +2,15 @@
 
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
-import { finishAssembly, scanPart, startUnit, undoLast, type ScanResult } from "@/lib/assembly";
+import {
+  addUnitNote,
+  finishAssembly,
+  removeUnitNote,
+  scanPart,
+  startUnit,
+  undoLast,
+  type ScanResult,
+} from "@/lib/assembly";
 import { requireAssembler } from "@/lib/auth/session";
 
 // 作業する人は、ログイン（組立端末のPIN、または Google）から決まる。画面から送られた名前は信じない。
@@ -49,4 +57,22 @@ export async function finishAction(_prev: ScanState, formData: FormData): Promis
   return r.ok
     ? { kind: "installed", slot: "", message: r.message, at: Date.now() }
     : { kind: "error", message: r.message, at: Date.now() };
+}
+
+export type NoteState = { ok: boolean; message: string; at: number } | null;
+
+/** 個体のメモを足す（在庫を使わない作業・部品） */
+export async function addNoteAction(_prev: NoteState, formData: FormData): Promise<NoteState> {
+  const mgmtNo = String(formData.get("mgmtNo") ?? "");
+  const r = await addUnitNote(await currentWorkerId(mgmtNo), mgmtNo, String(formData.get("note") ?? ""));
+  if (r.ok) refresh();
+  return { ...r, at: Date.now() };
+}
+
+/** 個体のメモを取り消す */
+export async function removeNoteAction(_prev: NoteState, formData: FormData): Promise<NoteState> {
+  const mgmtNo = String(formData.get("mgmtNo") ?? "");
+  const r = await removeUnitNote(await currentWorkerId(mgmtNo), mgmtNo, Number(formData.get("noteId")));
+  if (r.ok) refresh();
+  return { ...r, at: Date.now() };
 }

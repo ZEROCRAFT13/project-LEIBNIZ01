@@ -23,6 +23,8 @@ export const slotLabel: Record<string, string> = {
   COOLER: "CPUクーラー",
   CASE: "ケース",
   OS: "OS",
+  FAN: "ケースファン",
+  EXTRA: "追加部品（自由枠）",
 };
 
 export const channelLabel: Record<string, string> = {

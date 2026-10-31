@@ -29,8 +29,10 @@ export type InProgressUnit = {
 export async function listInProgress(): Promise<InProgressUnit[]> {
   return query<InProgressUnit>(
     `SELECT u.mgmt_no AS "mgmtNo", s.code AS "skuCode", us.display_name AS "assembledBy",
-            (SELECT count(*) FROM core.unit_parts up WHERE up.unit_id = u.id AND up.removed_at IS NULL)::int AS filled,
-            (SELECT coalesce(sum(qty), 0) FROM core.sku_slots ss WHERE ss.sku_id = u.sku_id)::int AS total
+            (SELECT coalesce(sum(LEAST(ss.qty, (SELECT count(*) FROM core.unit_parts up
+                                                   WHERE up.unit_id = u.id AND up.slot = ss.slot AND up.removed_at IS NULL))), 0)
+               FROM core.sku_slots ss WHERE ss.sku_id = u.sku_id AND ss.required)::int AS filled,
+            (SELECT coalesce(sum(qty), 0) FROM core.sku_slots ss WHERE ss.sku_id = u.sku_id AND ss.required)::int AS total
        FROM core.units u
        JOIN core.skus s ON s.id = u.sku_id
        LEFT JOIN core.users us ON us.id = u.assembled_by
@@ -65,7 +67,13 @@ export type AssemblySlot = {
   options: string[]; // 使ってよい部品の名前（型番）
   installed: { name: string; serialNo: string | null; by: string | null; at: Date }[];
   done: boolean;
+  /** false なら付けなくても組立を完了できる */
+  required: boolean;
+  /** true なら登録済みの部品なら何でも付けられる（自由枠） */
+  anyPart: boolean;
 };
+
+export type UnitNote = { id: number; note: string; by: string | null; at: Date };
 
 export type AssemblyView = {
   mgmtNo: string;
@@ -77,6 +85,7 @@ export type AssemblyView = {
   filled: number;
   total: number;
   nextSlot: string | null;
+  notes: UnitNote[];
 };
 
 export async function getAssembly(rawMgmtNo: string): Promise<AssemblyView | null> {
@@ -98,8 +107,8 @@ export async function getAssembly(rawMgmtNo: string): Promise<AssemblyView | nul
   if (!unit) return null;
 
   const [slotRows, optionRows, installedRows] = await Promise.all([
-    query<{ slot: string; qty: number }>(
-      `SELECT slot, qty FROM core.sku_slots WHERE sku_id = $1 ORDER BY sort_order, slot`,
+    query<{ slot: string; qty: number; required: boolean; any_part: boolean }>(
+      `SELECT slot, qty, required, any_part FROM core.sku_slots WHERE sku_id = $1 ORDER BY sort_order, slot`,
       [unit.sku_id],
     ),
     query<{ slot: string; name: string; model_no: string }>(
@@ -121,6 +130,7 @@ export async function getAssembly(rawMgmtNo: string): Promise<AssemblyView | nul
       [unit.id],
     ),
   ]);
+  const notes = await listUnitNotes(unit.id);
 
   const slots: AssemblySlot[] = slotRows.map((s) => {
     const installed = installedRows
@@ -130,13 +140,19 @@ export async function getAssembly(rawMgmtNo: string): Promise<AssemblyView | nul
       slot: s.slot,
       label: slotLabel[s.slot] ?? s.slot,
       qty: s.qty,
-      options: optionRows.filter((o) => o.slot === s.slot).map((o) => `${o.name}（${o.model_no}）`),
+      options: s.any_part
+        ? ["登録済みの部品なら何でも"]
+        : optionRows.filter((o) => o.slot === s.slot).map((o) => `${o.name}（${o.model_no}）`),
       installed,
       done: installed.length >= s.qty,
+      required: s.required,
+      anyPart: s.any_part,
     };
   });
-  const total = slots.reduce((n, s) => n + s.qty, 0);
-  const filled = slots.reduce((n, s) => n + Math.min(s.installed.length, s.qty), 0);
+  // 進み具合は「必ず付ける」枠だけで数える（付けなくてもよい枠は、付けたぶんだけ記録する）
+  const required = slots.filter((s) => s.required);
+  const total = required.reduce((n, s) => n + s.qty, 0);
+  const filled = required.reduce((n, s) => n + Math.min(s.installed.length, s.qty), 0);
 
   return {
     mgmtNo,
@@ -147,7 +163,8 @@ export async function getAssembly(rawMgmtNo: string): Promise<AssemblyView | nul
     slots,
     filled,
     total,
-    nextSlot: slots.find((s) => !s.done)?.slot ?? null,
+    nextSlot: required.find((s) => !s.done)?.slot ?? null,
+    notes,
   };
 }
 
@@ -283,14 +300,16 @@ async function findPartItem(client: PoolClient, code: string): Promise<FoundItem
 
 async function chooseSlot(client: PoolClient, unit: LockedUnit, item: FoundItem): Promise<string> {
   // この部品を使ってよい枠と、そこに付いている数
+  // 型番が決まっている枠を先に、自由枠（何でも付けられる枠）はあとに使う
   const r = await client.query<{ slot: string; qty: number; filled: number }>(
     `SELECT ss.slot, ss.qty,
             (SELECT count(*) FROM core.unit_parts up
               WHERE up.unit_id = $1 AND up.slot = ss.slot AND up.removed_at IS NULL)::int AS filled
        FROM core.sku_slots ss
-       JOIN core.sku_slot_options o ON o.slot_id = ss.id
-      WHERE ss.sku_id = $2 AND o.part_model_id = $3
-      ORDER BY ss.sort_order`,
+      WHERE ss.sku_id = $2
+        AND (ss.any_part OR EXISTS (SELECT 1 FROM core.sku_slot_options o
+                                     WHERE o.slot_id = ss.id AND o.part_model_id = $3))
+      ORDER BY ss.any_part, ss.sort_order`,
     [unit.id, unit.sku_id, item.part_model_id],
   );
   if (r.rows.length === 0) {
@@ -353,7 +372,7 @@ export async function undoLast(workerId: number, rawMgmtNo: string): Promise<Act
   }
 }
 
-/** 全部の枠に部品が付いたら、組立完了にして検品待ちにする */
+/** 「必ず付ける」枠に部品が全部付いたら、組立完了にして検品待ちにする */
 export async function finishAssembly(workerId: number, rawMgmtNo: string): Promise<ActionResult> {
   const mgmtNo = normalizeCode(rawMgmtNo);
   try {
@@ -361,7 +380,7 @@ export async function finishAssembly(workerId: number, rawMgmtNo: string): Promi
       const unit = await lockUnit(client, mgmtNo);
       const missing = await client.query<{ slot: string }>(
         `SELECT ss.slot FROM core.sku_slots ss
-          WHERE ss.sku_id = $1
+          WHERE ss.sku_id = $1 AND ss.required
             AND (SELECT count(*) FROM core.unit_parts up
                   WHERE up.unit_id = $2 AND up.slot = ss.slot AND up.removed_at IS NULL) < ss.qty
           ORDER BY ss.sort_order`,
@@ -377,6 +396,60 @@ export async function finishAssembly(workerId: number, rawMgmtNo: string): Promi
         [unit.id, workerId],
       );
       return { ok: true, message: `${mgmtNo} の組立が完了しました。検品に回してください。` };
+    });
+  } catch (error) {
+    if (error instanceof ScanRefused) return { ok: false, message: error.message };
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------
+// 個体のメモ（在庫を使わない作業・部品を文字で残す）
+// ---------------------------------------------------------------------
+
+async function listUnitNotes(unitId: number): Promise<UnitNote[]> {
+  return query<UnitNote>(
+    `SELECT n.id, n.note, us.display_name AS by, n.created_at AS at
+       FROM core.unit_notes n LEFT JOIN core.users us ON us.id = n.created_by
+      WHERE n.unit_id = $1 AND n.removed_at IS NULL
+      ORDER BY n.created_at, n.id`,
+    [unitId],
+  );
+}
+
+/** メモを足す（例：LEDテープを追加、ケーブルを交換）。組立中の個体だけ */
+export async function addUnitNote(workerId: number, rawMgmtNo: string, rawNote: string): Promise<ActionResult> {
+  const note = rawNote.normalize("NFC").replace(/\s+/g, " ").trim();
+  if (note.length < 1 || note.length > 200) return { ok: false, message: "メモは1〜200文字で書いてください。" };
+  const mgmtNo = normalizeCode(rawMgmtNo);
+  try {
+    return await withActor({ kind: "user", userId: workerId }, async (client) => {
+      const unit = await lockUnit(client, mgmtNo);
+      await client.query(`INSERT INTO core.unit_notes (unit_id, note, created_by) VALUES ($1, $2, $3)`, [
+        unit.id,
+        note,
+        workerId,
+      ]);
+      return { ok: true, message: "メモを残しました。" };
+    });
+  } catch (error) {
+    if (error instanceof ScanRefused) return { ok: false, message: error.message };
+    throw error;
+  }
+}
+
+/** メモを取り消す（消さずに取り消しの印を付ける） */
+export async function removeUnitNote(workerId: number, rawMgmtNo: string, noteId: number): Promise<ActionResult> {
+  const mgmtNo = normalizeCode(rawMgmtNo);
+  try {
+    return await withActor({ kind: "user", userId: workerId }, async (client) => {
+      const unit = await lockUnit(client, mgmtNo);
+      const r = await client.query(
+        `UPDATE core.unit_notes SET removed_at = now(), removed_by = $3
+          WHERE id = $1 AND unit_id = $2 AND removed_at IS NULL`,
+        [noteId, unit.id, workerId],
+      );
+      return r.rowCount === 1 ? { ok: true, message: "メモを取り消しました。" } : { ok: false, message: "そのメモはありません。" };
     });
   } catch (error) {
     if (error instanceof ScanRefused) return { ok: false, message: error.message };
