@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { finishAction, scanAction, undoAction, type ScanState } from "@/app/assembly/actions";
+import { beep } from "@/components/beep";
 
 // 組立画面の操作部分。バーコードリーダーは「文字を打ってEnterを押す」キーボードとして動くので、
 // 入力欄にカーソルがあれば、読むたびにフォームが送信される。
@@ -128,21 +129,3 @@ export function ScanConsole({ mgmtNo, complete }: { mgmtNo: string; complete: bo
 }
 
 /** 読めたら高い音、だめなら低い音（画面を見なくても分かるように） */
-function beep(ok: boolean) {
-  try {
-    const AudioCtx = window.AudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = ok ? "sine" : "square";
-    osc.frequency.value = ok ? 1320 : 220;
-    gain.gain.value = 0.08;
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + (ok ? 0.12 : 0.35));
-    osc.onended = () => void ctx.close();
-  } catch {
-    // 音が出せない環境では何もしない
-  }
-}

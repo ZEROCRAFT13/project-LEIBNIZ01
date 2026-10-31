@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { logoutAction } from "@/app/login/actions";
-import { canAssemble, canManage, getViewer } from "@/lib/auth/session";
+import { canAssemble, canManage, canPurchase, getViewer } from "@/lib/auth/session";
 
 const linkClass = "rounded px-3 py-2 text-stone-300 hover:bg-stone-800 hover:text-white";
 
@@ -15,6 +15,7 @@ export async function AccountNav() {
       : [
           { href: "/", label: "ホーム" },
           { href: "/trace", label: "個体トレース" },
+          ...(canPurchase(viewer) ? [{ href: "/purchases", label: "仕入れ" }] : []),
           ...(canAssemble(viewer) ? [{ href: "/assembly", label: "組立" }] : []),
           ...(canManage(viewer) ? [{ href: "/settings", label: "設定" }] : []),
         ];

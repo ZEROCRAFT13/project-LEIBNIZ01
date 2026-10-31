@@ -62,7 +62,7 @@ INSERT INTO core.purchases (supplier_id, supplier_order_no, ordered_on, total_am
 VALUES (1, 'SO-1', '2026-10-01', 300000, 27272, 'card');
 INSERT INTO core.purchase_lines (purchase_id, part_model_id, description, qty, unit_price, unit_tax) VALUES
   (1, 1, 'Ryzen 7 9700X', 1, 52800, 4800),
-  (1, 2, 'RTX 5070 A',    1, 98780, 8980),
+  (1, 2, 'RTX 5070 A',    2, 98780, 8980),
   (1, 4, 'RTX 5060 A',    1, 54780, 4980);
 INSERT INTO core.part_items (part_model_id, purchase_line_id, serial_no, cost_excl_tax, cost_tax, box_kept, box_location) VALUES
   (1, 1, 'CPU-001', 48000, 4800, false, NULL),
@@ -325,6 +325,50 @@ SELECT pg_temp.expect_error($$SELECT * FROM auth.sessions$$, '監査用がセッ
 RESET ROLE;
 SET ROLE zb_pii;
 SELECT pg_temp.expect_error($$SELECT * FROM auth.sessions$$, '個人情報の窓口がセッションを読む');
+RESET ROLE;
+
+-- ---------- 入荷（0005_receiving） ----------
+SET ROLE zb_app;
+SELECT pg_temp.check((SELECT status = 'received' FROM core.purchases WHERE id = 1),
+  '全部の明細を入荷した仕入れは「入荷済み」になる');
+
+INSERT INTO core.purchases (supplier_id, supplier_order_no, ordered_on, total_amount, tax_amount, payment_method)
+VALUES (1, 'SO-RCV', '2026-10-20', 106160, 9650, 'card');
+INSERT INTO core.purchase_lines (purchase_id, part_model_id, description, qty, unit_price, unit_tax)
+SELECT id, 1, 'Ryzen 7 9700X', 2, 52800, 4800 FROM core.purchases WHERE supplier_order_no = 'SO-RCV';
+INSERT INTO core.purchase_lines (purchase_id, part_model_id, description, qty, unit_price, unit_tax)
+SELECT id, NULL, '送料', 1, 560, 50 FROM core.purchases WHERE supplier_order_no = 'SO-RCV';
+CREATE TEMP VIEW rcv AS
+  SELECT p.id AS purchase_id, p.status, l.id AS line_id
+    FROM core.purchases p JOIN core.purchase_lines l ON l.purchase_id = p.id AND l.part_model_id IS NOT NULL
+   WHERE p.supplier_order_no = 'SO-RCV';
+SELECT pg_temp.check((SELECT status = 'ordered' FROM rcv), '入荷前は「注文済み」');
+
+INSERT INTO core.part_items (part_model_id, purchase_line_id, serial_no, cost_excl_tax, cost_tax)
+SELECT 1, line_id, 'RCV-001', 48000, 4800 FROM rcv;
+SELECT pg_temp.check((SELECT status = 'partially_received' FROM rcv), '一部だけ入荷すると「一部入荷」');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.part_items (part_model_id, purchase_line_id, serial_no, cost_excl_tax, cost_tax)
+    SELECT 2, line_id, 'RCV-GPU', 89800, 8980 FROM rcv$$,
+  '明細と違う型番の部品を入荷');
+INSERT INTO core.part_items (part_model_id, purchase_line_id, serial_no, cost_excl_tax, cost_tax)
+SELECT 1, line_id, 'RCV-002', 48000, 4800 FROM rcv;
+SELECT pg_temp.check((SELECT status = 'received' FROM rcv), '数がそろうと「入荷済み」（送料の明細は待たない）');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.part_items (part_model_id, purchase_line_id, serial_no, cost_excl_tax, cost_tax)
+    SELECT 1, line_id, 'RCV-003', 48000, 4800 FROM rcv$$,
+  '仕入れの数より多く入荷');
+
+DELETE FROM core.part_items WHERE serial_no = 'RCV-002';
+SELECT pg_temp.check((SELECT status = 'partially_received' FROM rcv), '入荷を取り消すと「一部入荷」に戻る');
+
+UPDATE core.purchases SET status = 'cancelled' WHERE supplier_order_no = 'SO-RCV';
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.part_items (part_model_id, purchase_line_id, serial_no, cost_excl_tax, cost_tax)
+    SELECT 1, line_id, 'RCV-004', 48000, 4800 FROM rcv$$,
+  '取り消した仕入れに入荷');
+DELETE FROM core.part_items WHERE serial_no = 'RCV-001';
+SELECT pg_temp.check((SELECT status = 'cancelled' FROM rcv), '取り消した仕入れの状態は自動で変わらない');
 RESET ROLE;
 
 \echo ALL TESTS PASSED

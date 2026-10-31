@@ -10,8 +10,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0002_roles.sql` | DBの利用者（`zb_app`・`zb_pii`・`zb_auditor`）と権限 |
 | `migrations/0003_tokyo_dates.sql` | 日付を日本時間で数える |
 | `migrations/0004_auth.sql` | ログイン（`auth` 区画）。バイトはメールアドレスなしで登録できる |
+| `migrations/0005_receiving.sql` | 入荷。仕入れの数より多く入荷できない・型番違いを止める。仕入れの状態を自動で決める |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（57項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（66項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 3つの区画
 
@@ -43,6 +44,7 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 ## データベースが自動で止めること
 
 - 構成表にない型番の取り付け（理由を書けば通る）
+- 仕入れの明細の数より多い入荷、明細と違う型番の入荷、取り消した仕入れへの入荷
 - 1つの部品を2台に取り付けること
 - 組立した人が自分で検品すること
 - 注文と違うSKUの個体や、注文台数を超える個体を、注文に紐づけること

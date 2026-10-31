@@ -72,6 +72,35 @@ export const rmaStatusLabel: Record<string, string> = {
   rejected: "却下",
 };
 
+export const purchaseStatusLabel: Record<string, string> = {
+  ordered: "注文済み",
+  partially_received: "一部入荷",
+  received: "入荷済み",
+  cancelled: "取消",
+};
+
+export const paymentMethodLabel: Record<string, string> = {
+  card: "カード",
+  bank: "振込",
+  cash: "現金",
+  cod: "代引き",
+  other: "その他",
+};
+
+export const partCategoryLabel: Record<string, string> = {
+  cpu: "CPU",
+  gpu: "GPU",
+  motherboard: "マザーボード",
+  memory: "メモリ",
+  ssd: "SSD",
+  psu: "電源",
+  cooler: "CPUクーラー",
+  case: "ケース",
+  fan: "ファン",
+  os: "OS",
+  other: "その他",
+};
+
 export function label(map: Record<string, string>, code: string | null | undefined): string {
   if (code == null) return "—";
   return map[code] ?? code;

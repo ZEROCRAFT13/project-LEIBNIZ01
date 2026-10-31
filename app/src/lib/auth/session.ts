@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { safeNext } from "./google";
-import { ASSEMBLY_ROLES, MANAGER_ROLES, findDevice, findViewer, type Device, type Issued, type Viewer } from "./store";
+import { ASSEMBLY_ROLES, MANAGER_ROLES, PURCHASE_ROLES, findDevice, findViewer, type Device, type Issued, type Viewer } from "./store";
 
 // Cookie とログインの確認。画面（Server Component）とサーバーの処理（Server Action・Route Handler）の両方から使う。
 // 画面を隠すだけでは守れないので、データを読む・書く処理の直前で必ず require〜 を呼ぶ。
@@ -65,6 +65,10 @@ export function canManage(viewer: Viewer): boolean {
   return viewer.kind === "user" && viewer.roles.some((r) => MANAGER_ROLES.includes(r));
 }
 
+export function canPurchase(viewer: Viewer): boolean {
+  return viewer.kind === "user" && viewer.roles.some((r) => PURCHASE_ROLES.includes(r));
+}
+
 /** Google でログインした人だけ（組立端末のPINでは入れない画面） */
 export async function requireUser(next: string): Promise<Viewer> {
   const viewer = await getViewer();
@@ -77,6 +81,13 @@ export async function requireUser(next: string): Promise<Viewer> {
 export async function requireManager(next: string): Promise<Viewer> {
   const viewer = await requireUser(next);
   if (!canManage(viewer)) redirect("/?denied=1");
+  return viewer;
+}
+
+/** 仕入れと入荷を登録できる人（代表・工場長） */
+export async function requirePurchaser(next: string): Promise<Viewer> {
+  const viewer = await requireUser(next);
+  if (!canPurchase(viewer)) redirect("/?denied=1");
   return viewer;
 }
 
