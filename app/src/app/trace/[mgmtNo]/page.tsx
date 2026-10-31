@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth/session";
 import { SearchForm } from "@/components/trace/search-form";
 import { Card, Loading, Tag } from "@/components/ui";
 import { ymd, ymdHm, yen } from "@/lib/format";
+import { photoKindLabel, stageLabel, type PhotoKind, type Stage } from "@/lib/inspection-calc";
 import {
   channelLabel,
   label,
@@ -301,13 +302,27 @@ function Inspections({ items }: { items: UnitTrace["inspections"] }) {
             <li key={n} className="flex flex-col gap-1 border-b border-stone-100 px-5 py-3 text-sm last:border-0">
               <span className="flex flex-wrap items-center gap-2">
                 {i.result === "pass" ? <Tag tone="green">合格</Tag> : <Tag tone="red">不合格</Tag>}
+                <span className="font-bold">{stageLabel[i.stage as Stage] ?? i.stage}</span>
                 <span className="font-mono">{ymdHm(i.finishedAt)}</span>
                 <span className="text-stone-600">{i.inspector}</span>
               </span>
-              <span className="text-stone-700">
-                負荷試験 {i.stressTestMinutes ?? "—"}分 ・ CPU最高 {i.maxCpuTempC ?? "—"}℃ ・ GPU最高{" "}
-                {i.maxGpuTempC ?? "—"}℃ ・ 騒音 {i.noiseDb ?? "—"}dB
-              </span>
+              {i.stage === "software" && (
+                <span className="text-stone-700">
+                  負荷試験 {i.stressTestMinutes ?? "—"}分 ・ CPU最高 {i.maxCpuTempC ?? "—"}℃ ・ GPU最高{" "}
+                  {i.maxGpuTempC ?? "—"}℃ ・ 騒音 {i.noiseDb ?? "—"}dB
+                </span>
+              )}
+              {i.warnings.length > 0 && <span className="text-amber-900">上限超え：{i.warnings.join("、")}</span>}
+              {i.note && <span className="text-stone-700">メモ：{i.note}</span>}
+              {i.photos.length > 0 && (
+                <span className="flex flex-wrap gap-2">
+                  {i.photos.map((p) => (
+                    <a key={p.id} href={`/inspection/photos/${p.id}`} target="_blank" rel="noreferrer" className="text-blue-800 underline">
+                      {photoKindLabel[p.kind as PhotoKind] ?? "写真"}
+                    </a>
+                  ))}
+                </span>
+              )}
             </li>
           ))}
         </ul>

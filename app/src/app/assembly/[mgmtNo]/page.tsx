@@ -7,7 +7,9 @@ import { UnitNotes } from "@/components/assembly/unit-notes";
 import { Loading } from "@/components/ui";
 import { getAssembly, type AssemblySlot } from "@/lib/assembly";
 import { label, unitStatusLabel } from "@/lib/labels";
-import { requireAssembler } from "@/lib/auth/session";
+import { canInspect, requireAssembler } from "@/lib/auth/session";
+import { getReworkRequest } from "@/lib/inspection";
+import { ymdHm } from "@/lib/format";
 
 export const metadata: Metadata = { title: "組立 | ZERO-BIT" };
 
@@ -35,8 +37,12 @@ async function AssemblyUnit({
   const viewer = await requireAssembler(`/assembly/${mgmtNo}`);
   // 個体トレース（注文番号などが出る）は、組立端末のPINでは開けない
   const canTrace = viewer.kind === "user";
-  const view = await getAssembly(decodeURIComponent(mgmtNo));
+  const [view, rework] = await Promise.all([
+    getAssembly(decodeURIComponent(mgmtNo)),
+    getReworkRequest(decodeURIComponent(mgmtNo)),
+  ]);
   if (!view) notFound();
+  const inspectable = canInspect(viewer) && view.assembledById !== viewer.user.id;
 
   const percent = view.total > 0 ? Math.round((view.filled / view.total) * 100) : 0;
 
@@ -79,6 +85,14 @@ async function AssemblyUnit({
         </p>
       )}
 
+      {rework && view.canScan && (
+        <p role="alert" className="rounded-md bg-amber-100 px-4 py-3 text-sm text-amber-950">
+          <span className="font-bold">検品で組立に戻されました</span>（{rework.by}・{ymdHm(rework.at)}）：{rework.note}
+          <br />
+          部品を替えるときは「最後に付けた部品を外す」で外してから、新しい部品を読んでください。組立を完了すると、検品は①からやり直しです。
+        </p>
+      )}
+
       {view.canScan ? (
         <ScanConsole mgmtNo={view.mgmtNo} complete={view.nextSlot === null} />
       ) : view.status === "inspecting" ? (
@@ -92,6 +106,14 @@ async function AssemblyUnit({
               </Link>
             )}
           </p>
+          {inspectable && (
+            <Link
+              href={`/inspection/${view.mgmtNo}`}
+              className="mt-1 flex h-12 items-center justify-center rounded-md border-2 border-green-700 bg-white font-bold text-green-800"
+            >
+              この個体を検品する
+            </Link>
+          )}
           <Link
             href="/assembly"
             className="mt-1 flex h-12 items-center justify-center rounded-md bg-green-700 font-bold text-white"

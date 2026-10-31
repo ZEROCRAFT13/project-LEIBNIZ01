@@ -8,6 +8,7 @@ import {
   addPartTimer,
   createEnrollment,
   deactivatePartTimer,
+  setInspector,
   reissueEnrollment,
   revokeDevice,
   setWorkerPin,
@@ -99,5 +100,12 @@ export async function unlockPinAction(formData: FormData): Promise<void> {
 export async function deactivatePartTimerAction(formData: FormData): Promise<void> {
   const viewer = await requireManager("/settings/workers");
   await deactivatePartTimer(viewer.user.id, Number(formData.get("userId")));
+  refresh();
+}
+
+/** バイトに検品を任せる／やめる */
+export async function setInspectorAction(formData: FormData): Promise<void> {
+  const viewer = await requireManager("/settings/workers");
+  await setInspector(viewer.user.id, Number(formData.get("userId")), formData.get("on") === "1");
   refresh();
 }

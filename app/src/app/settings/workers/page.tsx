@@ -5,7 +5,7 @@ import { AddPartTimerForm, SetPinForm } from "@/components/settings/forms";
 import { Card, Loading, Tag } from "@/components/ui";
 import { requireManager } from "@/lib/auth/session";
 import { PIN_MAX_FAILS, listWorkerAccounts, type WorkerAccount } from "@/lib/auth/store";
-import { deactivatePartTimerAction, unlockPinAction } from "../actions";
+import { deactivatePartTimerAction, setInspectorAction, unlockPinAction } from "../actions";
 
 export const metadata: Metadata = { title: "バイトとPIN | ZERO-BIT" };
 
@@ -36,6 +36,7 @@ async function Workers() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold">{a.name}</span>
                 <PinTag account={a} />
+                {(a.inspector || a.kind !== "part_time") && <Tag tone="blue">検品できる</Tag>}
               </div>
               <div className="flex flex-wrap items-start gap-4">
                 <SetPinForm userId={a.id} hasPin={a.hasPin} />
@@ -48,6 +49,18 @@ async function Workers() {
                   </form>
                 )}
               </div>
+              {a.kind === "part_time" && (
+                <form action={setInspectorAction} className="flex flex-wrap items-center gap-3 text-sm">
+                  <input type="hidden" name="userId" value={a.id} />
+                  <input type="hidden" name="on" value={a.inspector ? "0" : "1"} />
+                  <span className="text-stone-700">
+                    {a.inspector ? "検品を任せています（自分で組んだ個体は検品できません）" : "検品は任せていません"}
+                  </span>
+                  <button type="submit" className="h-9 rounded-md border border-blue-800 px-3 font-bold text-blue-800">
+                    {a.inspector ? "検品を任せるのをやめる" : "検品を任せる"}
+                  </button>
+                </form>
+              )}
               {a.kind === "part_time" && (
                 <details className="text-sm">
                   <summary className="cursor-pointer text-red-800">辞めたので利用を止める</summary>

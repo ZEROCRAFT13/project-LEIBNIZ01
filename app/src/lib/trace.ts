@@ -122,6 +122,10 @@ export type UnitTrace = {
   removedParts: TracePart[];
   totals: { partsCostInclTax: number; boxesKept: number };
   inspections: {
+    stage: string;
+    warnings: string[];
+    note: string | null;
+    photos: { id: number; kind: string }[];
     inspector: string;
     finishedAt: Date | null;
     stressTestMinutes: number | null;
@@ -260,11 +264,17 @@ export async function getUnitTrace(rawMgmtNo: string): Promise<UnitTrace | null>
       max_gpu_temp_c: number | null;
       noise_db: number | null;
       result: string | null;
+      stage: string;
+      warnings: string[];
+      note: string | null;
+      photos: { id: number; kind: string }[];
     }>(
       `SELECT us.display_name AS inspector, i.finished_at, i.stress_test_minutes,
-              i.max_cpu_temp_c, i.max_gpu_temp_c, i.noise_db, i.result
+              i.max_cpu_temp_c, i.max_gpu_temp_c, i.noise_db, i.result, i.stage, i.warnings, i.note,
+              coalesce((SELECT json_agg(json_build_object('id', p.id, 'kind', p.kind) ORDER BY p.id)
+                          FROM core.inspection_photos p WHERE p.inspection_id = i.id), '[]') AS photos
          FROM core.inspections i JOIN core.users us ON us.id = i.inspector_id
-        WHERE i.unit_id = $1 ORDER BY i.started_at DESC`,
+        WHERE i.unit_id = $1 ORDER BY i.finished_at DESC, i.id DESC`,
       [unit.id],
     ),
     query<{
@@ -383,6 +393,10 @@ export async function getUnitTrace(rawMgmtNo: string): Promise<UnitTrace | null>
     removedParts,
     totals: partTotals(parts),
     inspections: inspectionRows.map((i) => ({
+      stage: i.stage,
+      warnings: i.warnings,
+      note: i.note,
+      photos: i.photos,
       inspector: i.inspector,
       finishedAt: i.finished_at,
       stressTestMinutes: i.stress_test_minutes,

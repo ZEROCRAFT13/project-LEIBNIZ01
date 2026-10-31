@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { safeNext } from "./google";
-import { ASSEMBLY_ROLES, DOCUMENT_ROLES, MANAGER_ROLES, PURCHASE_ROLES, findDevice, findViewer, type Device, type Issued, type Viewer } from "./store";
+import { ASSEMBLY_ROLES, DOCUMENT_ROLES, INSPECTION_ROLES, MANAGER_ROLES, PURCHASE_ROLES, findDevice, findViewer, type Device, type Issued, type Viewer } from "./store";
 
 // Cookie とログインの確認。画面（Server Component）とサーバーの処理（Server Action・Route Handler）の両方から使う。
 // 画面を隠すだけでは守れないので、データを読む・書く処理の直前で必ず require〜 を呼ぶ。
@@ -61,6 +61,11 @@ export function canAssemble(viewer: Viewer): boolean {
   return viewer.roles.some((r) => ASSEMBLY_ROLES.includes(r));
 }
 
+/** 検品できる人（代表・工場長と、検品を任せたバイト。端末のPINでもよい） */
+export function canInspect(viewer: Viewer): boolean {
+  return viewer.roles.some((r) => INSPECTION_ROLES.includes(r));
+}
+
 export function canManage(viewer: Viewer): boolean {
   return viewer.kind === "user" && viewer.roles.some((r) => MANAGER_ROLES.includes(r));
 }
@@ -107,6 +112,14 @@ export async function requireAssembler(next: string): Promise<Viewer> {
   const viewer = await getViewer();
   if (!viewer) redirect(loginUrl(next));
   if (!canAssemble(viewer)) redirect(viewer.kind === "worker" ? "/login?error=no_role" : "/?denied=1");
+  return viewer;
+}
+
+/** 検品できる人（Google ログインでも、組立端末のPINでもよい） */
+export async function requireInspector(next: string): Promise<Viewer> {
+  const viewer = await getViewer();
+  if (!viewer) redirect(loginUrl(next));
+  if (!canInspect(viewer)) redirect(viewer.kind === "worker" ? "/assembly" : "/?denied=1");
   return viewer;
 }
 
