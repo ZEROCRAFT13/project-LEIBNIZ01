@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 import {
   addOptionAction,
   addSlotAction,
+  amazonListingsAction,
   createSkuAction,
   removeOptionAction,
   removeSlotAction,
@@ -15,6 +16,7 @@ import {
 } from "@/app/settings/skus/actions";
 import { label, partCategoryLabel, slotLabel } from "@/lib/labels";
 import { PART_CATEGORIES } from "@/lib/master-calc";
+import { amazonFulfillmentLabel, neededListings, type AmazonFulfillment } from "@/lib/sku-calc";
 
 const inputClass = "h-11 rounded-md border border-stone-400 bg-white px-3";
 const buttonClass = "h-11 rounded-md bg-blue-800 px-4 font-bold text-white disabled:opacity-60";
@@ -503,5 +505,135 @@ export function PartSkuPanel({
       )}
       <Message state={latest(addState, removeState)} />
     </div>
+  );
+}
+
+type Listing = { fulfillment: "fba" | "fbm"; sellerSku: string; asin: string; active: boolean };
+
+// Amazon の出荷方法と、FBA 用・自社出荷用の出品（セラー SKU と ASIN）
+export function AmazonListingsForm({
+  skuId,
+  fulfillment,
+  listings,
+}: {
+  skuId: number;
+  fulfillment: AmazonFulfillment | null;
+  listings: Listing[];
+}) {
+  const [state, action, pending] = useActionState<SkuState, FormData>(amazonListingsAction, null);
+  const current = (k: "fba" | "fbm") => listings.find((l) => l.fulfillment === k && l.active);
+  const [v, setV] = useState({
+    fulfillment: (fulfillment ?? "none") as AmazonFulfillment | "none",
+    fbaSellerSku: current("fba")?.sellerSku ?? "",
+    fbaAsin: current("fba")?.asin ?? "",
+    fbmSellerSku: current("fbm")?.sellerSku ?? "",
+    fbmAsin: current("fbm")?.asin ?? "",
+  });
+  const needed = neededListings(v.fulfillment === "none" ? null : v.fulfillment);
+  const stopped = listings.filter((l) => !l.active);
+
+  return (
+    <form action={action} className="flex flex-col gap-4">
+      <input type="hidden" name="skuId" value={skuId} />
+      <input type="hidden" name="back" value={`/settings/skus/${skuId}`} />
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 text-sm font-medium">出荷方法</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(["fba", "fbm", "both", "none"] as const).map((f) => (
+            <label
+              key={f}
+              className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                v.fulfillment === f ? "border-blue-700 bg-blue-50 font-bold" : "border-stone-300"
+              }`}
+            >
+              <input
+                type="radio"
+                name="fulfillment"
+                value={f}
+                checked={v.fulfillment === f}
+                onChange={() => setV((x) => ({ ...x, fulfillment: f }))}
+              />
+              {amazonFulfillmentLabel[f]}
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-stone-600">
+          FBA：台数の出る機種。補充の計算と FBA 納品の対象になります。自社出荷：高額で台数の少ない機種など。注文ごとに管理番号を読んで出荷します。
+          両方：ふだんは FBA で売り、FBA の在庫が切れている間だけ自社出荷でも売ります。
+        </p>
+      </fieldset>
+
+      {(["fba", "fbm"] as const).map((k) => {
+        const use = needed.includes(k);
+        // 出荷方法で使わない側は、登録してあるときだけ見せる（切り替えて戻すことがあるので消さない）
+        if (!use && !current(k)) return null;
+        return (
+          <fieldset key={k} className={`flex flex-col gap-2 ${use ? "" : "opacity-60"}`}>
+            <legend className="mb-1 text-sm font-medium">
+              {k === "fba" ? "FBA 用の出品" : "自社出荷用の出品"}
+              {!use && <span className="ml-2 text-xs font-normal">（今の出荷方法では使いません）</span>}
+            </legend>
+            <div className="flex flex-wrap gap-3">
+              <label className="flex min-w-56 flex-1 flex-col gap-1 text-sm">
+                セラー SKU
+                <input
+                  name={`${k}SellerSku`}
+                  value={k === "fba" ? v.fbaSellerSku : v.fbmSellerSku}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setV((x) => (k === "fba" ? { ...x, fbaSellerSku: val } : { ...x, fbmSellerSku: val }));
+                  }}
+                  maxLength={40}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={k === "fba" ? "例 ZB-G5070-R7-FBA" : "例 ZB-G5070-R7-FBM"}
+                  className={`${inputClass} font-mono`}
+                />
+              </label>
+              <label className="flex w-44 flex-col gap-1 text-sm">
+                ASIN
+                <input
+                  name={`${k}Asin`}
+                  value={k === "fba" ? v.fbaAsin : v.fbmAsin}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setV((x) => (k === "fba" ? { ...x, fbaAsin: val } : { ...x, fbmAsin: val }));
+                  }}
+                  maxLength={10}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="B0XXXXXXXX"
+                  className={`${inputClass} font-mono uppercase`}
+                />
+              </label>
+            </div>
+            {use && !(k === "fba" ? v.fbaSellerSku : v.fbmSellerSku) && (
+              <p className="text-xs text-amber-900">まだ出品していなければ空のままで大丈夫です（あとで登録します）。</p>
+            )}
+          </fieldset>
+        );
+      })}
+      <p className="text-xs text-stone-600">
+        セラー SKU は、セラーセントラルに登録したとおりに書きます（大文字・小文字も同じに）。空にして保存すると、その出品を止めます（記録は残ります）。
+      </p>
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={pending} className={buttonClass}>
+          保存
+        </button>
+      </div>
+      <Message state={state} />
+      {stopped.length > 0 && (
+        <details className="text-sm text-stone-600">
+          <summary className="cursor-pointer">止めた出品（{stopped.length}）</summary>
+          <ul className="mt-1 list-disc pl-5">
+            {stopped.map((l) => (
+              <li key={`${l.fulfillment}-${l.sellerSku}`} className="font-mono">
+                {l.fulfillment === "fba" ? "FBA" : "自社出荷"}・{l.sellerSku}・{l.asin}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </form>
   );
 }

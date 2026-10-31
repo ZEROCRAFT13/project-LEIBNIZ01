@@ -1,7 +1,13 @@
 import "server-only";
 import { DatabaseError, type PoolClient } from "pg";
 import { query, withActor } from "@/lib/db";
-import { DEFAULT_SLOTS, type SkuInput, type SlotInput } from "@/lib/sku-calc";
+import {
+  DEFAULT_SLOTS,
+  type AmazonFulfillment,
+  type AmazonInput,
+  type SkuInput,
+  type SlotInput,
+} from "@/lib/sku-calc";
 
 // 機種（SKU）と構成表（枠と、枠に使ってよい型番）。組立で読んだ部品は、この構成表と照らし合わせる。
 // actorId は、呼ぶ側（app/settings/skus/actions.ts）が requireManager でログインから決めたものを渡す。
@@ -19,13 +25,22 @@ export type SkuRow = {
   slotCount: number;
   emptySlots: number;
   openUnits: number;
+  amazonFulfillment: AmazonFulfillment | null;
+  /** 出荷方法で要るのに、まだ登録していない出品の数 */
+  missingListings: number;
 };
 
 const SKU_COLUMNS = `k.id, k.code, k.name, k.list_price AS "listPrice", k.active,
   (SELECT count(*) FROM core.sku_slots s WHERE s.sku_id = k.id)::int AS "slotCount",
   (SELECT count(*) FROM core.sku_slots s WHERE s.sku_id = k.id AND s.required AND NOT s.any_part
       AND NOT EXISTS (SELECT 1 FROM core.sku_slot_options o WHERE o.slot_id = s.id))::int AS "emptySlots",
-  (SELECT count(*) FROM core.units u WHERE u.sku_id = k.id AND u.status IN ('planned', 'assembling'))::int AS "openUnits"`;
+  (SELECT count(*) FROM core.units u WHERE u.sku_id = k.id AND u.status IN ('planned', 'assembling'))::int AS "openUnits",
+  k.amazon_fulfillment AS "amazonFulfillment",
+  (SELECT count(*) FROM unnest(CASE k.amazon_fulfillment WHEN 'both' THEN ARRAY['fba', 'fbm']
+                                                         WHEN 'fba' THEN ARRAY['fba'] WHEN 'fbm' THEN ARRAY['fbm']
+                                                         ELSE ARRAY[]::text[] END) AS need(f)
+    WHERE NOT EXISTS (SELECT 1 FROM core.amazon_listings l
+                       WHERE l.sku_id = k.id AND l.fulfillment = need.f AND l.active))::int AS "missingListings"`;
 
 export async function listSkusWithSummary(): Promise<SkuRow[]> {
   return query<SkuRow>(`SELECT ${SKU_COLUMNS} FROM core.skus k ORDER BY k.active DESC, k.code`);
@@ -51,7 +66,8 @@ export type SlotView = {
   anyPart: boolean;
   options: SlotOption[];
 };
-export type SkuDetail = SkuRow & { slots: SlotView[] };
+export type AmazonListing = { id: number; fulfillment: "fba" | "fbm"; sellerSku: string; asin: string; active: boolean };
+export type SkuDetail = SkuRow & { slots: SlotView[]; listings: AmazonListing[] };
 
 export async function getSkuDetail(id: number): Promise<SkuDetail | null> {
   if (!Number.isSafeInteger(id) || id <= 0) return null;
@@ -71,8 +87,14 @@ export async function getSkuDetail(id: number): Promise<SkuDetail | null> {
       ORDER BY m.maker, m.model_no`,
     [id],
   );
+  const listings = await query<AmazonListing>(
+    `SELECT id, fulfillment, seller_sku AS "sellerSku", asin, active
+       FROM core.amazon_listings WHERE sku_id = $1 ORDER BY active DESC, fulfillment, id DESC`,
+    [id],
+  );
   return {
     ...sku,
+    listings,
     slots: slots.map((s) => ({
       ...s,
       options: options
@@ -95,6 +117,9 @@ function refusal(error: unknown): string | null {
   if (error.code === "P0001") return error.message; // 0010_sku_composition のトリガーの日本語のメッセージ
   if (error.code === "23505") {
     if (error.constraint === "skus_code_key") return "同じ機種コードが、もう登録されています。";
+    if (error.constraint === "amazon_listings_seller_sku_key") {
+      return "そのセラー SKU は、もう別の出品で使っています（止めた出品も含みます）。";
+    }
     if (error.constraint === "sku_slots_sku_id_slot_key") return "同じ名前の枠が、もうあります。";
     if (error.constraint === "sku_slot_options_pkey") return "その型番は、もうこの枠に入っています。";
   }
@@ -105,6 +130,7 @@ async function run(actorId: number, fn: (client: PoolClient) => Promise<SkuResul
   try {
     return await withActor({ kind: "user", userId: actorId }, fn);
   } catch (error) {
+    if (error instanceof SkuError) return { ok: false, message: error.message };
     const message = refusal(error);
     if (message) return { ok: false, message };
     throw error;
@@ -260,4 +286,42 @@ export async function slotsForPartModel(partModelId: number): Promise<{
   );
   const pick = ({ slotId, skuId, skuCode, slot }: (typeof rows)[number]) => ({ slotId, skuId, skuCode, slot });
   return { using: rows.filter((r) => r.used).map(pick), available: rows.filter((r) => !r.used).map(pick) };
+}
+
+/**
+ * Amazon の出荷方法と出品を保存する。
+ * 出品は、セラー SKU と ASIN が今のものと同じならそのまま。ちがえば今のものを止めて新しく登録する（履歴を残す）。
+ * 空で送られた側は止める（画面は、登録してある出品の欄を出荷方法にかかわらず必ず送る）。
+ */
+export async function setAmazonListings(actorId: number, skuId: number, input: AmazonInput): Promise<SkuResult> {
+  return run(actorId, async (client) => {
+    const sku = await client.query(`UPDATE core.skus SET amazon_fulfillment = $2 WHERE id = $1`, [skuId, input.fulfillment]);
+    if (sku.rowCount !== 1) throw new SkuError("機種が見つかりません。");
+    for (const kind of ["fba", "fbm"] as const) {
+      const wanted = input[kind];
+      const current = await client.query<{ id: number; seller_sku: string; asin: string }>(
+        `SELECT id, seller_sku, asin FROM core.amazon_listings WHERE sku_id = $1 AND fulfillment = $2 AND active FOR UPDATE`,
+        [skuId, kind],
+      );
+      const cur = current.rows[0];
+      if (cur && wanted && cur.seller_sku === wanted.sellerSku && cur.asin === wanted.asin) continue;
+      if (!cur && !wanted) continue;
+      if (cur) await client.query(`UPDATE core.amazon_listings SET active = false WHERE id = $1`, [cur.id]);
+      if (wanted) {
+        // 前に止めた同じセラー SKU（この機種・この出荷方法）なら、使い直す
+        const again = await client.query(
+          `UPDATE core.amazon_listings SET active = true, asin = $4
+            WHERE sku_id = $1 AND fulfillment = $2 AND seller_sku = $3 AND NOT active`,
+          [skuId, kind, wanted.sellerSku, wanted.asin],
+        );
+        if (!again.rowCount) {
+          await client.query(
+            `INSERT INTO core.amazon_listings (sku_id, fulfillment, seller_sku, asin) VALUES ($1, $2, $3, $4)`,
+            [skuId, kind, wanted.sellerSku, wanted.asin],
+          );
+        }
+      }
+    }
+    return { ok: true, id: skuId, message: "Amazon の出荷方法と出品を保存しました。" };
+  });
 }

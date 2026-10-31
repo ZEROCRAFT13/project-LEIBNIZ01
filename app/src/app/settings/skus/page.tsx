@@ -47,6 +47,10 @@ async function Skus() {
               <span className="font-mono text-sm text-stone-600">{k.listPrice !== null ? yen(k.listPrice) : ""}</span>
               <span className="ml-auto flex flex-wrap gap-1">
                 {!k.active && <Tag>使わない</Tag>}
+                {k.amazonFulfillment && (
+                  <Tag tone="blue">Amazon {k.amazonFulfillment === "both" ? "FBA＋自社出荷" : k.amazonFulfillment === "fba" ? "FBA" : "自社出荷"}</Tag>
+                )}
+                {k.missingListings > 0 && <Tag tone="amber">出品が未登録 {k.missingListings}</Tag>}
                 <Tag>{k.slotCount}枠</Tag>
                 {k.emptySlots > 0 && <Tag tone="amber">型番のない枠 {k.emptySlots}</Tag>}
                 {k.openUnits > 0 && <Tag tone="blue">組立中 {k.openUnits}台</Tag>}

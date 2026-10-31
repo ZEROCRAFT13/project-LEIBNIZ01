@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { AddSlotForm, SkuHeaderForm, SlotCard } from "@/components/settings/sku-forms";
+import { AddSlotForm, AmazonListingsForm, SkuHeaderForm, SlotCard } from "@/components/settings/sku-forms";
 import { Card, Loading } from "@/components/ui";
 import { requireManager } from "@/lib/auth/session";
 import { listPartModels } from "@/lib/purchasing";
@@ -55,6 +55,12 @@ async function Sku({
       <Card>
         <div className="p-5">
           <SkuHeaderForm sku={sku} />
+        </div>
+      </Card>
+
+      <Card title="Amazon の出荷方法と出品">
+        <div className="p-5">
+          <AmazonListingsForm skuId={sku.id} fulfillment={sku.amazonFulfillment} listings={sku.listings} />
         </div>
       </Card>
 
