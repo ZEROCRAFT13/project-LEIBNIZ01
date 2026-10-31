@@ -3,9 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { PartModelForm } from "@/components/settings/master-forms";
+import { PartSkuPanel } from "@/components/settings/sku-forms";
 import { Card, Loading } from "@/components/ui";
 import { requirePurchaser } from "@/lib/auth/session";
 import { getPartModel } from "@/lib/masters";
+import { slotsForPartModel } from "@/lib/skus";
 
 export const metadata: Metadata = { title: "部品の型番 | ZERO-BIT" };
 
@@ -33,6 +35,7 @@ async function Part({
   await requirePurchaser(`/settings/parts/${encodeURIComponent(id)}`);
   const part = /^\d{1,15}$/.test(id) ? await getPartModel(Number(id)) : null;
   if (!part) notFound();
+  const slots = await slotsForPartModel(part.id);
 
   return (
     <>
@@ -44,14 +47,12 @@ async function Part({
           追加しました。仕入れ・下書きの部品の選択肢に出ます（開いている画面は読み込み直してください）。
         </p>
       )}
-      <p className="text-sm text-stone-700">
-        在庫 {part.inStock}個・この型番を使える機種 {part.skuCount}
-        {part.skuCount === 0 && (
-          <span className="ml-2 text-amber-800">
-            （まだどの機種の構成表にも入っていないので、組立で使うと「構成表にない部品」として止まります。構成表の画面は次に作ります）
-          </span>
-        )}
-      </p>
+      <p className="text-sm text-stone-700">在庫 {part.inStock}個</p>
+      <Card title="使える機種（構成表）">
+        <div className="p-5">
+          <PartSkuPanel partModelId={part.id} using={slots.using} available={slots.available} />
+        </div>
+      </Card>
       <Card>
         <div className="p-5">
           <PartModelForm initial={part} />

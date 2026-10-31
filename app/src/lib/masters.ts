@@ -57,6 +57,7 @@ export async function getPartModel(id: number): Promise<PartModelRow | null> {
 }
 
 function partDuplicate(error: unknown): string | null {
+  if (error instanceof DatabaseError && error.code === "P0001") return error.message; // 構成表で使っている型番の種類を変えた
   if (!(error instanceof DatabaseError) || error.code !== "23505") return null;
   if (error.constraint === "part_models_jan_uq") return "このJANコードは、ほかの型番に登録されています。";
   return "同じメーカー・同じ型番が、もう登録されています。";

@@ -475,4 +475,36 @@ SELECT pg_temp.expect_error(
   '消費税が合計より大きい下書き');
 RESET ROLE;
 
+-- ---------- 機種の構成表（0010_sku_composition） ----------
+SET ROLE zb_app;
+SELECT pg_temp.expect_error($$INSERT INTO core.skus (code, name) VALUES ('zb lower', 'x')$$, '形のおかしい機種コード');
+INSERT INTO core.skus (code, name) VALUES ('ZB-TEST-1', 'テスト機種');
+INSERT INTO core.sku_slots (sku_id, slot, category) SELECT id, 'GPU', 'gpu' FROM core.skus WHERE code = 'ZB-TEST-1';
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.sku_slots (sku_id, slot, category) SELECT id, 'gpu slot', 'gpu' FROM core.skus WHERE code = 'ZB-TEST-1'$$,
+  '形のおかしい枠の名前');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.sku_slot_options (slot_id, part_model_id)
+    SELECT s.id, 5 FROM core.sku_slots s JOIN core.skus k ON k.id = s.sku_id WHERE k.code = 'ZB-TEST-1'$$,
+  'GPU の枠にメモリを入れる');
+INSERT INTO core.sku_slot_options (slot_id, part_model_id)
+SELECT s.id, 2 FROM core.sku_slots s JOIN core.skus k ON k.id = s.sku_id WHERE k.code = 'ZB-TEST-1';
+SELECT pg_temp.expect_error($$UPDATE core.part_models SET category = 'other' WHERE id = 2$$,
+  '構成表で使っている型番の種類を変える');
+
+INSERT INTO core.units (sku_id, status) SELECT id, 'assembling' FROM core.skus WHERE code = 'ZB-TEST-1';
+SELECT pg_temp.expect_error(
+  $$DELETE FROM core.sku_slots WHERE sku_id = (SELECT id FROM core.skus WHERE code = 'ZB-TEST-1')$$,
+  '組立中の個体がある機種の枠を消す');
+UPDATE core.sku_slots SET qty = 2 WHERE sku_id = (SELECT id FROM core.skus WHERE code = 'ZB-TEST-1');
+SELECT pg_temp.check((SELECT qty = 2 FROM core.sku_slots WHERE sku_id = (SELECT id FROM core.skus WHERE code = 'ZB-TEST-1')),
+  '組立中でも枠の数は変えられる');
+DELETE FROM core.sku_slot_options
+ WHERE slot_id = (SELECT s.id FROM core.sku_slots s JOIN core.skus k ON k.id = s.sku_id WHERE k.code = 'ZB-TEST-1');
+RESET ROLE;
+SELECT pg_temp.check(
+  (SELECT count(*) = 2 FROM audit.log WHERE table_name = 'core.sku_slot_options'
+     AND row_id = (SELECT s.id::text FROM core.sku_slots s JOIN core.skus k ON k.id = s.sku_id WHERE k.code = 'ZB-TEST-1')),
+  '使ってよい型番の追加・削除が監査ログに残る');
+
 \echo ALL TESTS PASSED
