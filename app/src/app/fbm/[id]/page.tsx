@@ -159,7 +159,7 @@ async function Order({ params }: { params: PageProps<"/fbm/[id]">["params"] }) {
               セラーセントラルの注文管理で、この注文の「出荷通知を送信」を行い、運送会社と送り状番号（
               {o.units.map((u) => u.trackingNo).join("、")}）を入れてください。終わったら下のボタンを押します。
             </p>
-            <NotifiedButton orderId={o.id} />
+            <NotifiedButton orderId={o.id} overdue={o.daysLeft !== null && o.daysLeft < 0} />
           </div>
         </Card>
       )}

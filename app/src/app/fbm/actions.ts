@@ -72,7 +72,7 @@ export async function shipAction(_prev: FbmState, formData: FormData): Promise<F
 }
 
 export async function notifiedAction(_prev: FbmState, formData: FormData): Promise<FbmState> {
-  return done(await markShipNotified(await actor(formData), idOf(formData)));
+  return done(await markShipNotified(await actor(formData), idOf(formData), str(formData, "delayReason") || null));
 }
 
 export async function cancelAction(_prev: FbmState, formData: FormData): Promise<FbmState> {

@@ -4,6 +4,7 @@ import { isMgmtNo, normalizeSearch } from "@/lib/codes";
 import { query, withActor } from "@/lib/db";
 import { isTracking, normalizeTracking, type FbaCarrier } from "@/lib/fba-calc";
 import type { FbmOrderInput, FbmStatus } from "@/lib/fbm-calc";
+import { TaskRefused, cancelTask, completeTask, createTask, findOpenTask, startTask, type Actor } from "@/lib/tasks";
 
 // Amazon の自社出荷（FBM）。まずは手で記録する：注文番号で注文を登録し、出荷待ちの個体を結びつけ、
 // 送り状番号を入れて発送する。お客様の名前・住所はここに持たない（セラーセントラルや運送会社のシステムで扱う）。
@@ -30,7 +31,7 @@ async function run<T extends FbmResult>(actorId: number, fn: (client: PoolClient
   try {
     return await withActor({ kind: "user", userId: actorId }, fn);
   } catch (error) {
-    if (error instanceof Refused) return { ok: false, message: error.message };
+    if (error instanceof Refused || error instanceof TaskRefused) return { ok: false, message: error.message };
     const m = dbMessage(error);
     if (m) return { ok: false, message: m };
     throw error;
@@ -192,7 +193,8 @@ export async function createFbmOrder(actorId: number, input: FbmOrderInput): Pro
       `INSERT INTO core.order_lines (order_id, sku_id, description, qty, unit_price) VALUES ($1, $2, $3, $4, $5)`,
       [id, input.skuId, sku.rows[0].code, input.qty, input.totalAmount / input.qty],
     );
-    return { ok: true, id, message: `注文 ${input.orderNo} を登録しました。` };
+    await createOrderTask(client, { kind: "user", userId: actorId }, id, input.orderNo, sku.rows[0].code, input.qty, input.shipBy);
+    return { ok: true, id, message: `注文 ${input.orderNo} を登録しました。ToDo に「出荷する」を足しました。` };
   });
 }
 
@@ -208,6 +210,8 @@ export async function linkUnit(actorId: number, orderId: number, rawCode: string
       `INSERT INTO core.order_units (order_id, unit_id, link_method, linked_by) VALUES ($1, $2, 'shipping', $3)`,
       [orderId, u.rows[0].id, actorId],
     );
+    const task = await findOpenTask(client, "system", `order:${orderId}`);
+    if (task) await startTask(client, { kind: "user", userId: actorId }, task.id);
     return { ok: true, message: `${mgmtNo} を結びつけました。` };
   });
 }
@@ -275,7 +279,7 @@ export async function markFbmShipped(actorId: number, orderId: number): Promise<
 }
 
 /** セラーセントラルで出荷通知をしたことを記録する（ここから Amazon には送らない） */
-export async function markShipNotified(actorId: number, orderId: number): Promise<FbmResult> {
+export async function markShipNotified(actorId: number, orderId: number, delayReason: string | null = null): Promise<FbmResult> {
   return run(actorId, async (client) => {
     const o = await lockOrder(client, orderId);
     if (o.status === "open" || o.status === "cancelled") throw new Refused("発送してから記録してください。");
@@ -284,7 +288,10 @@ export async function markShipNotified(actorId: number, orderId: number): Promis
       [orderId, actorId],
     );
     if (r.rowCount !== 1) throw new Refused("出荷通知は、もう記録してあります。");
-    return { ok: true, message: "出荷通知をしたことを記録しました。" };
+    // ToDo の「出荷する」を完了にする（出荷期限を過ぎていたら、遅れた理由が要る）
+    const task = await findOpenTask(client, "system", `order:${orderId}`);
+    if (task) await completeTask(client, { kind: "user", userId: actorId }, task.id, delayReason, { orderNo: o.external_order_no });
+    return { ok: true, message: "出荷通知をしたことを記録しました。ToDo の「出荷する」を完了にしました。" };
   });
 }
 
@@ -301,6 +308,8 @@ export async function cancelFbmOrder(actorId: number, orderId: number, rawReason
       [orderId],
     );
     await client.query(`UPDATE core.orders SET status = 'cancelled', cancel_reason = $2 WHERE id = $1`, [orderId, reason]);
+    const task = await findOpenTask(client, "system", `order:${orderId}`);
+    if (task) await cancelTask(client, { kind: "user", userId: actorId }, task.id, `注文の取り消し：${reason}`);
     return { ok: true, message: `注文 ${o.external_order_no} を取り消しました。` };
   });
 }
@@ -309,4 +318,30 @@ export async function cancelFbmOrder(actorId: number, orderId: number, rawReason
 export async function nowLocalMinute(): Promise<string> {
   const [r] = await query<{ v: string }>(`SELECT to_char(now() AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD"T"HH24:MI') AS v`);
   return r.v;
+}
+
+/**
+ * 自社出荷の注文に「出荷する」タスクを作る（手で登録したときも、SP-API で取り込んだときも）。
+ * 期限は出荷期限の日の終わり（日本時間）。担当は工場長
+ */
+export async function createOrderTask(
+  client: PoolClient,
+  actor: Actor,
+  orderId: number,
+  orderNo: string,
+  skuCode: string,
+  qty: number,
+  shipBy: string | null,
+): Promise<number> {
+  const due = shipBy
+    ? (await client.query<{ due: Date }>(`SELECT (($1::date + 1)::timestamp AT TIME ZONE 'Asia/Tokyo') AS due`, [shipBy])).rows[0].due
+    : null;
+  return createTask(client, actor, {
+    title: `自社出荷：${orderNo}（${skuCode} × ${qty}）を出荷する`,
+    description: "出荷待ちの個体を結びつけ → 送り状番号を入れて発送 → セラーセントラルで出荷通知",
+    roleCode: "factory_manager",
+    sourceKind: "system",
+    sourceRef: `order:${orderId}`,
+    dueAt: due,
+  });
 }
