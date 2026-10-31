@@ -3,9 +3,9 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { UnitJump } from "@/components/assembly/unit-jump";
 import { Card, Loading } from "@/components/ui";
-import { listInProgress, listSkus, listWorkers } from "@/lib/assembly";
-import { getCurrentWorker } from "@/lib/worker-session";
-import { clearWorkerAction, selectWorkerAction, startUnitAction } from "./actions";
+import { listInProgress, listSkus } from "@/lib/assembly";
+import { requireAssembler } from "@/lib/auth/session";
+import { startUnitAction } from "./actions";
 
 export const metadata: Metadata = { title: "組立 | ZERO-BIT" };
 
@@ -21,23 +21,16 @@ export default function AssemblyHomePage() {
 }
 
 async function AssemblyHome() {
-  const worker = await getCurrentWorker();
-  if (!worker) return <ChooseWorker />;
-
+  const viewer = await requireAssembler("/assembly");
   const [inProgress, skus] = await Promise.all([listInProgress(), listSkus()]);
 
   return (
     <>
       <div className="flex items-center justify-between gap-3 rounded-lg bg-stone-900 px-4 py-3 text-white">
         <span>
-          <span className="text-lg font-bold">{worker.name}</span>
+          <span className="text-lg font-bold">{viewer.user.name}</span>
           <span className="text-sm text-stone-300"> さんが作業中</span>
         </span>
-        <form action={clearWorkerAction}>
-          <button type="submit" className="h-11 rounded-md border border-stone-500 px-3 text-sm">
-            交代する
-          </button>
-        </form>
       </div>
 
       <Card>
@@ -89,29 +82,5 @@ async function AssemblyHome() {
         </div>
       </Card>
     </>
-  );
-}
-
-async function ChooseWorker() {
-  const workers = await listWorkers();
-  return (
-    <Card title="作業する人を選んでください">
-      <div className="flex flex-col gap-2 p-4">
-        {workers.map((w) => (
-          <form key={w.id} action={selectWorkerAction}>
-            <input type="hidden" name="workerId" value={w.id} />
-            <button
-              type="submit"
-              className="h-14 w-full rounded-md border border-stone-300 bg-white px-4 text-left text-lg font-medium hover:border-blue-700"
-            >
-              {w.name}
-            </button>
-          </form>
-        ))}
-        <p className="pt-2 text-xs text-stone-500">
-          ※ ログイン機能ができるまでの仮の仕組みです。選んだ名前で、誰が組み立てたかが記録されます。
-        </p>
-      </div>
-    </Card>
   );
 }

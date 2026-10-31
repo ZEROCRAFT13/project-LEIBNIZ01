@@ -6,31 +6,10 @@ import { slotLabel } from "@/lib/labels";
 
 // 組立担当が使う処理。読み取り機（キーボードとして動くバーコードリーダー）から入った文字を受け取る。
 // 書き込みはすべて withActor の中で行い、監査ログに「誰が」を残す。
+// workerId は、呼ぶ側（app/assembly/actions.ts）が requireAssembler でログインから決めたものを渡す。
 
-/** 組立をしてよい役割 */
-const ASSEMBLY_ROLES = ["assembler", "factory_manager"];
 /** 部品を読んで取り付けられる状態 */
 const OPEN_STATUSES = ["planned", "assembling"];
-
-export type Worker = { id: number; name: string };
-
-/** 今、組立をしてよい人（組立担当・工場長の役割を持っている人） */
-export async function listWorkers(): Promise<Worker[]> {
-  return query<Worker>(
-    `SELECT DISTINCT u.id, u.display_name AS name
-       FROM core.users u
-       JOIN core.role_assignments ra ON ra.user_id = u.id
-      WHERE u.active AND ra.role_code = ANY($1)
-        AND ra.valid_from <= now() AND (ra.valid_to IS NULL OR ra.valid_to > now())
-      ORDER BY u.id`,
-    [ASSEMBLY_ROLES],
-  );
-}
-
-export async function getWorker(id: number): Promise<Worker | null> {
-  const workers = await listWorkers();
-  return workers.find((w) => w.id === id) ?? null;
-}
 
 export type SkuOption = { id: number; code: string; name: string };
 
