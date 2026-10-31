@@ -13,7 +13,8 @@
     "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "unpdf": "^2.1.0"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

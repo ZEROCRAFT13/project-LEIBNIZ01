@@ -405,4 +405,39 @@ SET ROLE zb_auditor;
 SELECT pg_temp.check((SELECT count(*) >= 0 FROM core.purchase_shipments), '監査用は発送を読める');
 RESET ROLE;
 
+-- ---------- 書類の取り込み（0007_document_intake） ----------
+SET ROLE zb_app;
+INSERT INTO core.documents (kind, storage_uri, sha256, mime_type, byte_size, source, original_name)
+VALUES ('receipt', 'local:aa/aaaa.pdf', repeat('a', 64), 'application/pdf', 1234, 'folder', '領収書.pdf');
+SELECT pg_temp.check((SELECT review_status = 'needs_review' FROM core.documents WHERE sha256 = repeat('a', 64)),
+  '取り込んだ書類は「要確認」から始まる');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.documents (kind, storage_uri, sha256, mime_type, byte_size, source)
+    VALUES ('receipt', 'local:aa/other.pdf', repeat('a', 64), 'application/pdf', 1234, 'upload')$$,
+  '同じ中身のファイルを二重に取り込む');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.documents SET review_status = 'done' WHERE sha256 = repeat('a', 64)$$,
+  '日付・取引先・金額がないまま領収書を確認済みにする');
+UPDATE core.documents SET issued_on = '2026-10-30', counterparty = 'テストショップ', amount = 52800,
+                          invoice_reg_no = 'T1234567890123', review_status = 'done'
+ WHERE sha256 = repeat('a', 64);
+SELECT pg_temp.check((SELECT review_status = 'done' FROM core.documents WHERE sha256 = repeat('a', 64)),
+  '項目がそろえば確認済みにできる');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.documents SET storage_uri = 'local:bb/bbbb.pdf' WHERE sha256 = repeat('a', 64)$$,
+  '取り込んだファイルを差し替える');
+SELECT pg_temp.expect_error($$DELETE FROM core.documents$$, 'アプリ本体が書類を削除');
+INSERT INTO core.document_links (document_id, entity_type, entity_id)
+SELECT id, 'purchase', 1 FROM core.documents WHERE sha256 = repeat('a', 64);
+DELETE FROM core.document_links WHERE entity_type = 'purchase' AND entity_id = 1;
+RESET ROLE;
+SELECT pg_temp.expect_error($$DELETE FROM core.documents$$, '管理者でも書類を削除');
+SELECT pg_temp.check(
+  (SELECT 'counterparty' = ANY(changed_columns) AND actor_user_id = 1 FROM audit.log
+    WHERE table_name = 'core.documents' AND action = 'UPDATE' ORDER BY id DESC LIMIT 1),
+  '書類の項目を直した履歴が監査ログに残る（電子帳簿保存法の訂正の履歴）');
+SELECT pg_temp.check(
+  (SELECT count(*) = 2 FROM audit.log WHERE table_name = 'core.document_links'),
+  '書類のひもづけの付け外しが監査ログに残る');
+
 \echo ALL TESTS PASSED

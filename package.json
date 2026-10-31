@@ -13,7 +13,8 @@
     "app:install": "npm --prefix app install",
     "dev": "npm --prefix app run dev",
     "build": "npm --prefix app run build",
-    "lint": "npm --prefix app run lint"
+    "lint": "npm --prefix app run lint",
+    "docs:samples": "node scripts/sample-documents.mjs"
   },
   "engines": {
     "node": ">=22"

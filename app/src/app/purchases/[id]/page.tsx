@@ -4,10 +4,12 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ReceiveLine } from "@/components/purchases/receive-line";
 import { ShipmentPanel } from "@/components/purchases/shipment-panel";
+import { UploadBox } from "@/components/documents/upload-box";
+import { documentsForPurchase } from "@/lib/documents";
 import { Card, Loading, Tag } from "@/components/ui";
 import { requirePurchaser } from "@/lib/auth/session";
 import { yen, ymd } from "@/lib/format";
-import { label, partCategoryLabel, paymentMethodLabel, purchaseStatusLabel } from "@/lib/labels";
+import { documentKindLabel, label, partCategoryLabel, paymentMethodLabel, purchaseStatusLabel } from "@/lib/labels";
 import { getPurchase, type PurchaseLineView } from "@/lib/purchasing";
 
 export const metadata: Metadata = { title: "入荷 | ZERO-BIT" };
@@ -38,6 +40,7 @@ async function Purchase({
   if (!purchase) notFound();
 
   const open = purchase.status !== "cancelled";
+  const documents = await documentsForPurchase(purchase.id);
   const arrivedShipment = purchase.shipments.find((s) => String(s.id) === arrived);
   const firstOpen = purchase.lines.find((l) => l.model && l.items.length < l.qty && l.model.serialRequired);
 
@@ -112,6 +115,25 @@ async function Purchase({
           autoFocus={line.id === firstOpen?.id}
         />
       ))}
+
+      <Card title="書類（領収書・納品書・保証書）" aside={documents.length > 0 ? `${documents.length}件` : undefined}>
+        <div className="flex flex-col gap-3 px-5 py-4">
+          {documents.length > 0 && (
+            <ul className="flex flex-col divide-y divide-stone-100 rounded-md border border-stone-200 text-sm">
+              {documents.map((d) => (
+                <li key={d.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
+                  <Tag tone={d.reviewStatus === "done" ? "green" : "amber"}>{label(documentKindLabel, d.kind)}</Tag>
+                  <Link href={`/documents/${d.id}`} className="min-w-0 truncate text-blue-800 underline">
+                    {d.originalName ?? `書類 #${d.id}`}
+                  </Link>
+                  {d.reviewStatus !== "done" && <span className="text-xs text-amber-800">要確認</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <UploadBox purchaseId={purchase.id} />
+        </div>
+      </Card>
     </>
   );
 }
