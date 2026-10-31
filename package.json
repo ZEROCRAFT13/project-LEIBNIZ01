@@ -1,0 +1,19 @@
+{
+  "name": "zerobit",
+  "private": true,
+  "description": "ZERO-BIT 基幹システム",
+  "scripts": {
+    "db:up": "node scripts/db.mjs up",
+    "db:down": "docker compose down",
+    "db:reset": "node scripts/db.mjs reset",
+    "db:test": "node scripts/db.mjs test",
+    "db:psql": "node scripts/db.mjs psql",
+    "app:install": "npm --prefix app install",
+    "dev": "npm --prefix app run dev",
+    "build": "npm --prefix app run build",
+    "lint": "npm --prefix app run lint"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,23 @@
+# 開発用の PostgreSQL 16（本番の Cloud SQL と同じ版）
+# 使い方は README.md の「はじめての準備」を参照
+services:
+  db:
+    image: postgres:16
+    container_name: zerobit-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: zerobit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env に POSTGRES_PASSWORD を書いてください（.env.example をコピー）}
+    ports:
+      - "127.0.0.1:5432:5432"   # 自分のパソコンからだけ接続できる
+    volumes:
+      - zerobit-db-data:/var/lib/postgresql/data
+      - ./db:/db:ro             # マイグレーションとテストのSQLを読み取り専用で見せる
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d zerobit"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  zerobit-db-data:

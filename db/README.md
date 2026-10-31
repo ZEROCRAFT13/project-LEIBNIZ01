@@ -57,15 +57,16 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 
 ## 動作確認のしかた
 
-空のデータベースを作り、次の順に流します（ローカルでは Docker の `postgres:16` を使うのが簡単です）。
+リポジトリの一番上で次を実行します（Docker の PostgreSQL 16 を使います）。
 
 ```sh
-psql -d zerobit -v ON_ERROR_STOP=1 -f db/migrations/0001_init.sql
-psql -d zerobit -v ON_ERROR_STOP=1 -f db/migrations/0002_roles.sql
-psql -d zerobit -v ON_ERROR_STOP=1 -f db/tests/schema_test.sql
+npm run db:up     # 初回とパソコンの再起動後
+npm run db:test   # テスト用DB（zerobit_test）を作り直して、マイグレーションとテストを流す
 ```
 
-テストはデータを書き込むので、本番では流さないでください。
+テストは毎回作り直す `zerobit_test` に書き込むので、開発用DB（`zerobit`）のデータには影響しません。本番では流さないでください。
+
+手で流す場合は、空のデータベースに `migrations/` を番号順に流し、最後に `tests/schema_test.sql` を流します。
 
 ## まだ入っていないもの（フェーズ2で追加）
 

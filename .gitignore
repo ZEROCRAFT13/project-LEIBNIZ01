@@ -1,0 +1,11 @@
+# 秘密情報（.env.example だけは入れる）
+.env
+.env.*
+!.env.example
+
+# 依存パッケージとビルド結果
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
