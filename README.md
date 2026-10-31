@@ -16,10 +16,12 @@ Amazon.co.jp（FBA）を主軸にPCを組立・販売する会社の基幹シス
 ```sh
 npm run db:up        # Docker で PostgreSQL 16 を起動
 npm run db:test      # マイグレーションとテストを流す → 最後に「ALL TESTS PASSED」
-npm run db:reset     # 開発用DBを作る
+npm run db:seed      # 開発用DBを作り、ダミーデータを入れる
 npm run app:install  # 画面（Next.js）の部品を入れる
 npm run dev          # http://localhost:3000 で画面が開く
 ```
+
+画面の例：http://localhost:3000/trace/ZB-2609-0118（ダミーデータの個体）
 
 ## よく使うコマンド
 
@@ -28,7 +30,9 @@ npm run dev          # http://localhost:3000 で画面が開く
 | `npm run db:up` | PostgreSQL を起動する |
 | `npm run db:down` | PostgreSQL を止める（データは残る） |
 | `npm run db:test` | テスト用DBを作り直して、マイグレーションとテストを流す |
-| `npm run db:reset` | 開発用DB（zerobit）を作り直して、マイグレーションを流す |
+| `npm run db:reset` | 開発用DB（zerobit）を作り直して、マイグレーションを流す（空） |
+| `npm run db:seed` | 開発用DBを作り直して、ダミーデータを入れる |
+| `npm test` | アプリのテスト（テスト用DBを作り直してから流す） |
 | `npm run db:psql` | 開発用DBに psql でつなぐ |
 | `npm run dev` | 画面を開発モードで起動する |
 | `npm run build` | 画面を本番用にビルドする |

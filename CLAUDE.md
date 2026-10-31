@@ -25,10 +25,14 @@ Amazon.co.jp（FBA）を主軸にPCを月100台組立・販売する会社の基
 
 - `npm run db:up` … Docker で PostgreSQL 16 を起動（`.env` が必要。`.env.example` をコピー）
 - `npm run db:test` … テスト用DBを作り直し、マイグレーションと `db/tests/schema_test.sql` を流す。最後に `ALL TESTS PASSED` が出れば成功
-- `npm run db:reset` … 開発用DB（zerobit）を作り直す
+- `npm run db:reset` … 開発用DB（zerobit）を作り直す（空）
+- `npm run db:seed` … 開発用DBを作り直し、ダミーデータ（`db/seeds/`）を入れる。`app/.env.local` の接続先も書き込む
+- `npm test` … アプリ用のテストDBを作り直し、`app/` のテスト（vitest）を流す
 - `npm run dev` / `npm run build` / `npm run lint` … `app/` の Next.js
 
-DBやテストを変えたら `npm run db:test`、画面を変えたら `npm run build` と `npm run lint` が通ることを確かめてから報告する。
+DBやテストを変えたら `npm run db:test`、アプリのコードを変えたら `npm test`・`npm run build`・`npm run lint` が通ることを確かめてから報告する。
+
+アプリからDBへは `app/src/lib/db.ts` を使う。読み取りは `query()`、書き込みは必ず `withActor()` の中で行う（ルール7）。
 
 ## 必ず守るルール
 
