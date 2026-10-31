@@ -371,4 +371,73 @@ DELETE FROM core.part_items WHERE serial_no = 'RCV-001';
 SELECT pg_temp.check((SELECT status = 'cancelled' FROM rcv), '取り消した仕入れの状態は自動で変わらない');
 RESET ROLE;
 
+-- ---------- 発送・輸送中（0006_purchase_shipments） ----------
+SET ROLE zb_app;
+INSERT INTO core.purchases (supplier_id, supplier_order_no, ordered_on, total_amount, tax_amount, payment_method)
+VALUES (1, 'SO-SHIP', '2026-10-25', 52800, 4800, 'card');
+INSERT INTO core.purchase_lines (purchase_id, part_model_id, description, qty, unit_price, unit_tax)
+SELECT id, 1, 'Ryzen 7 9700X', 1, 52800, 4800 FROM core.purchases WHERE supplier_order_no = 'SO-SHIP';
+CREATE TEMP VIEW shp AS
+  SELECT p.id AS purchase_id, p.status, l.id AS line_id
+    FROM core.purchases p JOIN core.purchase_lines l ON l.purchase_id = p.id
+   WHERE p.supplier_order_no = 'SO-SHIP';
+SELECT pg_temp.check((SELECT status = 'ordered' FROM shp), '発送前は「注文済み」');
+
+INSERT INTO core.purchase_shipments (purchase_id, carrier, tracking_no)
+SELECT purchase_id, 'yamato', '123456789012' FROM shp;
+SELECT pg_temp.check((SELECT status = 'in_transit' FROM shp), '発送を登録すると「輸送中」');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.purchase_shipments (purchase_id, carrier, tracking_no) SELECT purchase_id, 'yamato', '123456789012' FROM shp$$,
+  '同じ運送会社の同じ追跡番号を二重に登録');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.purchase_shipments (purchase_id, carrier, tracking_no) SELECT purchase_id, 'sagawa', '1234-5678-9012' FROM shp$$,
+  'ハイフンつきの追跡番号をそのまま保存');
+
+INSERT INTO core.part_items (part_model_id, purchase_line_id, serial_no, cost_excl_tax, cost_tax)
+SELECT 1, line_id, 'SHIP-001', 48000, 4800 FROM shp;
+SELECT pg_temp.check((SELECT status = 'received' FROM shp), '輸送中でも、全部入荷すれば「入荷済み」');
+DELETE FROM core.part_items WHERE serial_no = 'SHIP-001';
+SELECT pg_temp.check((SELECT status = 'in_transit' FROM shp), '入荷を取り消すと「輸送中」に戻る');
+DELETE FROM core.purchase_shipments WHERE tracking_no = '123456789012';
+SELECT pg_temp.check((SELECT status = 'ordered' FROM shp), '発送を消すと「注文済み」に戻る');
+RESET ROLE;
+SET ROLE zb_auditor;
+SELECT pg_temp.check((SELECT count(*) >= 0 FROM core.purchase_shipments), '監査用は発送を読める');
+RESET ROLE;
+
+-- ---------- 書類の取り込み（0007_document_intake） ----------
+SET ROLE zb_app;
+INSERT INTO core.documents (kind, storage_uri, sha256, mime_type, byte_size, source, original_name)
+VALUES ('receipt', 'local:aa/aaaa.pdf', repeat('a', 64), 'application/pdf', 1234, 'folder', '領収書.pdf');
+SELECT pg_temp.check((SELECT review_status = 'needs_review' FROM core.documents WHERE sha256 = repeat('a', 64)),
+  '取り込んだ書類は「要確認」から始まる');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.documents (kind, storage_uri, sha256, mime_type, byte_size, source)
+    VALUES ('receipt', 'local:aa/other.pdf', repeat('a', 64), 'application/pdf', 1234, 'upload')$$,
+  '同じ中身のファイルを二重に取り込む');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.documents SET review_status = 'done' WHERE sha256 = repeat('a', 64)$$,
+  '日付・取引先・金額がないまま領収書を確認済みにする');
+UPDATE core.documents SET issued_on = '2026-10-30', counterparty = 'テストショップ', amount = 52800,
+                          invoice_reg_no = 'T1234567890123', review_status = 'done'
+ WHERE sha256 = repeat('a', 64);
+SELECT pg_temp.check((SELECT review_status = 'done' FROM core.documents WHERE sha256 = repeat('a', 64)),
+  '項目がそろえば確認済みにできる');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.documents SET storage_uri = 'local:bb/bbbb.pdf' WHERE sha256 = repeat('a', 64)$$,
+  '取り込んだファイルを差し替える');
+SELECT pg_temp.expect_error($$DELETE FROM core.documents$$, 'アプリ本体が書類を削除');
+INSERT INTO core.document_links (document_id, entity_type, entity_id)
+SELECT id, 'purchase', 1 FROM core.documents WHERE sha256 = repeat('a', 64);
+DELETE FROM core.document_links WHERE entity_type = 'purchase' AND entity_id = 1;
+RESET ROLE;
+SELECT pg_temp.expect_error($$DELETE FROM core.documents$$, '管理者でも書類を削除');
+SELECT pg_temp.check(
+  (SELECT 'counterparty' = ANY(changed_columns) AND actor_user_id = 1 FROM audit.log
+    WHERE table_name = 'core.documents' AND action = 'UPDATE' ORDER BY id DESC LIMIT 1),
+  '書類の項目を直した履歴が監査ログに残る（電子帳簿保存法の訂正の履歴）');
+SELECT pg_temp.check(
+  (SELECT count(*) = 2 FROM audit.log WHERE table_name = 'core.document_links'),
+  '書類のひもづけの付け外しが監査ログに残る');
+
 \echo ALL TESTS PASSED

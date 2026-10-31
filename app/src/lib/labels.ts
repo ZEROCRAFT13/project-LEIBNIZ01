@@ -74,9 +74,19 @@ export const rmaStatusLabel: Record<string, string> = {
 
 export const purchaseStatusLabel: Record<string, string> = {
   ordered: "注文済み",
+  in_transit: "輸送中",
   partially_received: "一部入荷",
   received: "入荷済み",
   cancelled: "取消",
+};
+
+export const carrierLabel: Record<string, string> = {
+  yamato: "ヤマト運輸",
+  sagawa: "佐川急便",
+  japanpost: "日本郵便",
+  seino: "西濃運輸",
+  amazon: "Amazon配送",
+  other: "その他",
 };
 
 export const paymentMethodLabel: Record<string, string> = {
@@ -99,6 +109,28 @@ export const partCategoryLabel: Record<string, string> = {
   fan: "ファン",
   os: "OS",
   other: "その他",
+};
+
+export const documentKindLabel: Record<string, string> = {
+  receipt: "領収書",
+  invoice: "請求書",
+  delivery_note: "納品書",
+  warranty_card: "保証書",
+  quote: "見積書",
+  setup_guide: "説明書",
+  photo: "写真",
+  rma_form: "RMA申請書",
+  filing: "届出・申告",
+  contract: "契約書",
+  other: "その他",
+};
+
+export const documentSourceLabel: Record<string, string> = {
+  email: "メール",
+  upload: "アップロード",
+  generated: "システムが作成",
+  scan: "スキャン",
+  folder: "取り込みフォルダ",
 };
 
 export function label(map: Record<string, string>, code: string | null | undefined): string {

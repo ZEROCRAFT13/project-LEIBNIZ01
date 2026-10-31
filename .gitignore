@@ -9,3 +9,7 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# 書類の保存先と取り込みフォルダ（開発用。本物の書類は入れない）
+/.zerobit/
+/inbox/
