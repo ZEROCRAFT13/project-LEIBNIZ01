@@ -23,6 +23,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/trace" className="rounded px-3 py-2 text-stone-300 hover:bg-stone-800 hover:text-white">
                 個体トレース
               </Link>
+              <Link href="/assembly" className="rounded px-3 py-2 text-stone-300 hover:bg-stone-800 hover:text-white">
+                組立
+              </Link>
             </nav>
             {process.env.NODE_ENV !== "production" && (
               <span className="ml-auto rounded bg-amber-200 px-2 py-1 text-xs font-medium text-amber-950">

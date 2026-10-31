@@ -128,9 +128,9 @@ describe("個体1台の履歴", () => {
     expect(t?.registration).toBeNull();
   });
 
-  it("ZB-2610-0045: 検品前・未出荷の個体", async () => {
+  it("ZB-2610-0045: 組立中・未出荷の個体", async () => {
     const t = await getUnitTrace("2610-0045");
-    expect(t?.status).toBe("inspecting");
+    expect(t?.status).toBe("assembling");
     expect(t?.warranty.state).toBe("not_started");
     expect(t?.inspections).toEqual([]);
     expect(t?.parts).toHaveLength(7);

@@ -21,7 +21,10 @@ npm run app:install  # 画面（Next.js）の部品を入れる
 npm run dev          # http://localhost:3000 で画面が開く
 ```
 
-画面の例：http://localhost:3000/trace/ZB-2609-0118（ダミーデータの個体）
+画面の例（ダミーデータ）
+
+- 個体トレース：http://localhost:3000/trace/ZB-2609-0118
+- 組立：http://localhost:3000/assembly → 名前を選び、`ZB-2610-0045` を開いて `PS85-2301` と `KEY-ZZ9P` を入力すると組立が完了する
 
 ## よく使うコマンド
 

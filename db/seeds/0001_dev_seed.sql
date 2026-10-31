@@ -139,8 +139,8 @@ VALUES
   ('ZB-2609-0119', pg_temp.sku('ZB-G5070-R7'), 'at_fba',
    pg_temp.usr('sato@zerobit.example'), '2026-09-19 17:00+09', pg_temp.usr('owner@zerobit.example'), '2026-09-20 15:00+09',
    '2026-09-21 10:00+09', 'fba', 12, NULL),
-  ('ZB-2610-0045', pg_temp.sku('ZB-G5070-R7'), 'inspecting',
-   pg_temp.usr('sato@zerobit.example'), '2026-10-11 16:30+09', NULL, NULL,
+  ('ZB-2610-0045', pg_temp.sku('ZB-G5070-R7'), 'assembling',
+   pg_temp.usr('sato@zerobit.example'), NULL, NULL, NULL,
    NULL, NULL, 12, NULL);
 
 INSERT INTO core.mgmt_no_counters (yymm, last_no) VALUES ('2608', 77), ('2609', 119), ('2610', 45);
@@ -197,7 +197,7 @@ UPDATE core.unit_parts
  WHERE unit_id = pg_temp.unit('ZB-2609-0102') AND slot = 'GPU' AND removed_at IS NULL;
 SELECT pg_temp.install('ZB-2609-0102', 'GPU',    pg_temp.buy('RTX5070-A12G',     '602-V531-3999', 'ドスパラ',     'DS-88400',     '2026-09-30', 98780, 'B-11'), 'owner@zerobit.example', '2026-10-02 11:20+09');
 
--- ZB-2610-0045（組立が終わり、検品待ち。PSU・OSはこれから）
+-- ZB-2610-0045（組立の途中。電源とOSがまだ。在庫の PS85-2301 と KEY-ZZ9P を読めば完成する）
 SELECT pg_temp.install('ZB-2610-0045', 'CPU',    pg_temp.buy('100-100001404WOF', '9MP4C0451',     'Amazon',       'AMZ-504-1005', '2026-10-05', 52800),  'sato@zerobit.example', '2026-10-11 15:10+09');
 SELECT pg_temp.install('ZB-2610-0045', 'GPU',    pg_temp.buy('RTX5070-A12G',     '602-V531-5045', 'ドスパラ',     'DS-89011',     '2026-10-06', 98780, 'B-12'), 'sato@zerobit.example', '2026-10-11 15:20+09');
 SELECT pg_temp.install('ZB-2610-0045', 'MB',     pg_temp.buy('B850-ATX',         'MB24-1005',     'ドスパラ',     'DS-89011',     '2026-10-06', 24980),  'sato@zerobit.example', '2026-10-11 15:00+09');
@@ -209,6 +209,25 @@ SELECT pg_temp.install('ZB-2610-0045', 'CASE',   pg_temp.buy('MT-ATX',          
 -- 在庫の部品（まだどの個体にも付いていない）
 SELECT pg_temp.buy('GD850',      'PS85-2301', 'ツクモ',       'TK-70550',     '2026-10-08', 16480, 'C-05');
 SELECT pg_temp.buy('WIN11-HOME', 'KEY-ZZ9P',  'ソフト代理店', 'SW-2026-1001', '2026-10-01', 18500);
+
+-- 新しく1台（ZB-G5070-R7）組み立てられる分の在庫。組立画面を試すのに使う
+SELECT pg_temp.buy('100-100001404WOF', '9MP4C0501',     'Amazon',       'AMZ-505-1020', '2026-10-20', 52800);
+SELECT pg_temp.buy('RTX5070-B12G',     'B5070-78001',   'ツクモ',       'TK-70901',     '2026-10-21', 97800, 'B-18');
+SELECT pg_temp.buy('B850-ATX',         'MB24-1101',     'ドスパラ',     'DS-89500',     '2026-10-21', 24980);
+SELECT pg_temp.buy('D5-5600-16X2',     'K5D-5101',      'パソコン工房', 'PK-56400',     '2026-10-21', 21980, 'B-19');
+SELECT pg_temp.buy('NV4-1TB',          'S6Z-9501',      'パソコン工房', 'PK-56400',     '2026-10-21', 13980);
+SELECT pg_temp.buy('GD850',            'PS85-2302',     'ツクモ',       'TK-70901',     '2026-10-21', 16480, 'C-06');
+SELECT pg_temp.buy('AIO240',           'LQ24-1501',     'Amazon',       'AMZ-505-1020', '2026-10-20', 11800);
+SELECT pg_temp.buy('MT-ATX',           NULL,            'Amazon',       'AMZ-505-1020', '2026-10-20', 9980);
+SELECT pg_temp.buy('MT-ATX',           NULL,            'Amazon',       'AMZ-505-1020', '2026-10-20', 9980);
+SELECT pg_temp.buy('WIN11-HOME',       'KEY-AB1C',      'ソフト代理店', 'SW-2026-1015', '2026-10-15', 18500);
+-- 構成が違う部品（5070機に付けようとすると止まることを試す用）
+SELECT pg_temp.buy('RTX5060TI-A16G',   '602-V520-0901', 'ドスパラ',     'DS-89500',     '2026-10-21', 69800, 'B-20');
+
+-- シリアルのない部品はJANコードで読む（2で始まるのは店内用の番号。ダミー）
+UPDATE core.part_models SET jan_code = '2000000000015' WHERE model_no = 'MT-ATX';
+-- シリアルのある部品にもJANはある。JANを読んだら「シリアルを読んで」と案内する
+UPDATE core.part_models SET jan_code = '2000000000022' WHERE model_no = 'GD850';
 
 -- ---------- 検品 ----------
 INSERT INTO core.inspections (unit_id, inspector_id, started_at, finished_at, stress_test_minutes,
