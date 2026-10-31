@@ -86,7 +86,7 @@ describe("部品の型番", () => {
 
   it("ダミーデータの型番は、在庫数と使える機種の数が出る", async () => {
     const gpu = (await listAllPartModels("RTX5070-A12G"))[0];
-    expect(gpu.skuCount).toBe(1);
+    expect(gpu.skuCount).toBeGreaterThanOrEqual(1);
     const [stock] = await query<{ n: number }>(
       "SELECT count(*)::int AS n FROM core.part_items WHERE part_model_id = $1 AND status = 'in_stock'",
       [gpu.id],

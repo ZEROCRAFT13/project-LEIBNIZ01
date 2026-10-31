@@ -54,6 +54,15 @@ async function SettingsMenu() {
       </li>
       <li>
         <Link
+          href="/settings/skus"
+          className="flex flex-col gap-1 rounded-lg border border-stone-300 bg-white p-5 hover:border-blue-700"
+        >
+          <span className="font-bold">機種と構成表</span>
+          <span className="text-sm text-stone-600">機種（SKU）を作る／枠ごとに使ってよい型番を決める（組立のチェックに使う）</span>
+        </Link>
+      </li>
+      <li>
+        <Link
           href="/settings/suppliers"
           className="flex flex-col gap-1 rounded-lg border border-stone-300 bg-white p-5 hover:border-blue-700"
         >
