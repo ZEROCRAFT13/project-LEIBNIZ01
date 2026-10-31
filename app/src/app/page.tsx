@@ -48,6 +48,11 @@ async function Menu({ searchParams }: { searchParams: PageProps<"/">["searchPara
             title: "組立",
             text: "管理番号を発行し、部品のバーコードを読んで取り付けを記録する（組立担当のスマホ・タブレット用）",
           },
+          {
+            href: "/labels",
+            title: "管理番号シール",
+            text: "発行した管理番号の QR シールを PT-P700（24mm テープ）で刷る。本体と箱に1枚ずつ",
+          },
         ]
       : []),
     ...(canManage(viewer)

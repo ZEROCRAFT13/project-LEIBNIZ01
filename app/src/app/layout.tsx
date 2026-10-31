@@ -13,7 +13,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ja" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-stone-100 text-stone-900">
-        <header className="bg-stone-900 text-white">
+        <header className="bg-stone-900 text-white print:hidden">
           <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
             <Link href="/" className="font-mono text-lg font-medium tracking-wider">
               ZERO-BIT
