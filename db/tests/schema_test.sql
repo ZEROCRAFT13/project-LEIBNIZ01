@@ -666,4 +666,37 @@ SELECT pg_temp.check(
      AND row_id IN (SELECT id::text FROM core.inspections WHERE unit_id = (SELECT id FROM insp_unit))),
   '検品の記録が監査ログに残る');
 
+-- ---------- Amazon の出荷方法と出品（0014_amazon_fulfillment） ----------
+SET ROLE zb_app;
+UPDATE core.skus SET amazon_fulfillment = 'both' WHERE id = 1;
+SELECT pg_temp.expect_error($$UPDATE core.skus SET amazon_fulfillment = 'amazon' WHERE id = 1$$, '出荷方法にない値');
+INSERT INTO core.amazon_listings (sku_id, fulfillment, seller_sku, asin) VALUES
+  (1, 'fba', 'ZB-G5070-R7-FBA', 'B0TEST0001'),
+  (1, 'fbm', 'ZB-G5070-R7-FBM', 'B0TEST0001');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.amazon_listings (sku_id, fulfillment, seller_sku, asin) VALUES (1, 'fba', 'ZB-OTHER', 'B0TEST0001')$$,
+  '同じ機種に、使っている FBA の出品を2つ');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.amazon_listings (sku_id, fulfillment, seller_sku, asin) VALUES (2, 'fba', 'ZB-G5070-R7-FBA', 'B0TEST0002')$$,
+  '同じセラー SKU を別の機種に');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.amazon_listings (sku_id, fulfillment, seller_sku, asin) VALUES (2, 'fba', 'ZB G5060', 'B0TEST0002')$$,
+  'セラー SKU に空白');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.amazon_listings (sku_id, fulfillment, seller_sku, asin) VALUES (2, 'fba', 'ZB-G5060-FBA', 'b0test')$$,
+  'ASIN の形がちがう');
+SELECT pg_temp.expect_error($$UPDATE core.amazon_listings SET sku_id = 2 WHERE seller_sku = 'ZB-G5070-R7-FBA'$$, '出品を別の機種に付け替える');
+SELECT pg_temp.expect_error($$UPDATE core.amazon_listings SET fulfillment = 'fbm' WHERE seller_sku = 'ZB-G5070-R7-FBA'$$, '出品の出荷方法を変える');
+SELECT pg_temp.expect_error($$DELETE FROM core.amazon_listings$$, 'アプリ本体が出品を消す');
+UPDATE core.amazon_listings SET active = false WHERE seller_sku = 'ZB-G5070-R7-FBA';
+INSERT INTO core.amazon_listings (sku_id, fulfillment, seller_sku, asin) VALUES (1, 'fba', 'ZB-G5070-R7-FBA2', 'B0TEST0001');
+SELECT pg_temp.check(
+  (SELECT count(*) = 2 FROM core.amazon_listings WHERE sku_id = 1 AND fulfillment = 'fba'),
+  '止めた出品は残り、新しい出品を登録できる');
+RESET ROLE;
+SELECT pg_temp.expect_error($$DELETE FROM core.amazon_listings$$, '管理者でも出品は消せない');
+SELECT pg_temp.check(
+  (SELECT count(*) = 4 FROM audit.log WHERE table_name = 'core.amazon_listings'),
+  '出品の登録と停止が監査ログに残る');
+
 \echo ALL TESTS PASSED

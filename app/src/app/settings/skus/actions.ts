@@ -4,13 +4,14 @@ import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { safeNext } from "@/lib/auth/google";
 import { requireManager } from "@/lib/auth/session";
-import { parseSkuInput, parseSlotInput } from "@/lib/sku-calc";
+import { parseAmazonInput, parseSkuInput, parseSlotInput } from "@/lib/sku-calc";
 import {
   addOption,
   addSlot,
   createSku,
   removeOption,
   removeSlot,
+  setAmazonListings,
   setSlotQty,
   setSlotRequired,
   updateSku,
@@ -85,4 +86,12 @@ export async function removeOptionAction(_prev: SkuState, formData: FormData): P
 export async function slotRequiredAction(_prev: SkuState, formData: FormData): Promise<SkuState> {
   const viewer = await requireManager(back(formData));
   return done(await setSlotRequired(viewer.user.id, n(formData, "slotId"), formData.get("required") === "1"));
+}
+
+/** Amazon の出荷方法と出品（セラー SKU・ASIN）を保存する */
+export async function amazonListingsAction(_prev: SkuState, formData: FormData): Promise<SkuState> {
+  const viewer = await requireManager(back(formData));
+  const parsed = parseAmazonInput(Object.fromEntries(formData));
+  if (!parsed.ok) return { ok: false, message: parsed.errors.join(" "), at: Date.now() };
+  return done(await setAmazonListings(viewer.user.id, n(formData, "skuId"), parsed.value));
 }

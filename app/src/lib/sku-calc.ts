@@ -75,3 +75,64 @@ export function parseSlotInput(raw: Record<string, unknown>): Parsed<SlotInput> 
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, value: { slot, category: category!, qty, required, anyPart } };
 }
+
+// ---------------------------------------------------------------------
+// Amazon の出荷方法と出品
+// ---------------------------------------------------------------------
+
+export type AmazonFulfillment = "fba" | "fbm" | "both";
+
+export const amazonFulfillmentLabel: Record<AmazonFulfillment | "none", string> = {
+  none: "Amazon では売らない",
+  fba: "FBA",
+  fbm: "自社出荷",
+  both: "両方（FBA が主、切れたら自社出荷）",
+};
+
+/** その出荷方法で要る出品（FBA 用・自社出荷用） */
+export function neededListings(f: AmazonFulfillment | null): ("fba" | "fbm")[] {
+  return f === "both" ? ["fba", "fbm"] : f ? [f] : [];
+}
+
+export type ListingInput = { sellerSku: string; asin: string } | null;
+export type AmazonInput = { fulfillment: AmazonFulfillment | null; fba: ListingInput; fbm: ListingInput };
+
+/** セラー SKU は半角にして前後の空白を取る（大文字・小文字はそのまま。Amazon に登録した通りに書く） */
+export function normalizeSellerSku(raw: string): string {
+  return raw.normalize("NFKC").trim();
+}
+
+export function normalizeAsin(raw: string): string {
+  return raw.normalize("NFKC").toUpperCase().replace(/\s+/g, "");
+}
+
+/**
+ * 出荷方法と、FBA 用・自社出荷用の出品を確かめる。
+ * 出品は「セラー SKU と ASIN の両方」か「両方空（まだ出品していない・止める）」。
+ * 出荷方法で使わない側の出品は送られても無視する（止めはしない。切り替えて戻すことがあるため）。
+ */
+export function parseAmazonInput(raw: Record<string, unknown>): Parsed<AmazonInput> {
+  const errors: string[] = [];
+  const f = raw.fulfillment;
+  const fulfillment = f === "fba" || f === "fbm" || f === "both" ? f : f === "" || f === "none" || f === undefined ? null : undefined;
+  if (fulfillment === undefined) errors.push("出荷方法を選んでください。");
+
+  const listing = (kind: "fba" | "fbm"): ListingInput => {
+    const name = kind === "fba" ? "FBA 用" : "自社出荷用";
+    const sellerSku = normalizeSellerSku(typeof raw[`${kind}SellerSku`] === "string" ? (raw[`${kind}SellerSku`] as string) : "");
+    const asin = normalizeAsin(typeof raw[`${kind}Asin`] === "string" ? (raw[`${kind}Asin`] as string) : "");
+    if (sellerSku === "" && asin === "") return null;
+    if (!/^[!-~]{1,40}$/.test(sellerSku)) {
+      errors.push(`${name}のセラー SKU は、半角の英数字と記号（空白なし）で40文字までにしてください。`);
+    }
+    if (!/^[A-Z0-9]{10}$/.test(asin)) errors.push(`${name}の ASIN は、英数字10文字で入れてください（例 B0XXXXXXXX）。`);
+    return { sellerSku, asin };
+  };
+  const fba = listing("fba");
+  const fbm = listing("fbm");
+  if (fba && fbm && fba.sellerSku === fbm.sellerSku) {
+    errors.push("FBA 用と自社出荷用には、別のセラー SKU を使ってください。");
+  }
+  if (errors.length > 0 || fulfillment === undefined) return { ok: false, errors };
+  return { ok: true, value: { fulfillment, fba, fbm } };
+}
