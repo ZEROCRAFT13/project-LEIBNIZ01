@@ -465,4 +465,14 @@ SELECT pg_temp.expect_error(
   '同じショップの同じ商品名に、型番を2つ対応させる');
 RESET ROLE;
 
+-- ---------- 下書きの消費税（0009_purchase_draft_tax） ----------
+SET ROLE zb_app;
+INSERT INTO core.purchase_drafts (source, parser, supplier_order_no, lines, total_amount, tax_amount)
+VALUES ('paste', 'joshin', '66000001', '[]', 119840, 10894);
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.purchase_drafts (source, parser, supplier_order_no, lines, total_amount, tax_amount)
+    VALUES ('paste', 'joshin', '66000002', '[]', 1000, 2000)$$,
+  '消費税が合計より大きい下書き');
+RESET ROLE;
+
 \echo ALL TESTS PASSED

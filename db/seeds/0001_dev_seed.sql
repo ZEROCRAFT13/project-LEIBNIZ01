@@ -78,7 +78,8 @@ INSERT INTO core.suppliers (name, kind, rma_contact) VALUES
   ('パソコン工房',     'shop',        NULL),
   ('Amazon',           'shop',        NULL),
   ('ソフト代理店',     'distributor', NULL),
-  ('GPU代理店A',       'distributor', 'rma@gpu-distributor-a.example');
+  ('GPU代理店A',       'distributor', 'rma@gpu-distributor-a.example'),
+  ('Joshin',           'shop',        NULL);
 
 -- ---------- 部品マスタ ----------
 INSERT INTO core.part_models (category, maker, model_no, name, serial_required, keep_box, maker_warranty_months) VALUES

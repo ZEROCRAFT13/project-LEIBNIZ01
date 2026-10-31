@@ -1,7 +1,7 @@
 import "server-only";
 import { DatabaseError } from "pg";
 import { query, withActor } from "@/lib/db";
-import { itemKey, parseOrderMail, splitLineTotal, type ParsedLine } from "@/lib/order-mail";
+import { SUPPORTED_SHOPS, itemKey, parseOrderMail, splitLineTotal, type ParsedLine } from "@/lib/order-mail";
 import { PAYMENT_METHODS, splitTax10, type LineInput, type PaymentMethod } from "@/lib/purchase-calc";
 import { PurchaseError, duplicatePurchaseError, insertPurchase } from "@/lib/purchasing";
 
@@ -25,7 +25,10 @@ export async function createDraftFromMail(
   if (text.length > 200_000) return { ok: false, message: "本文が長すぎます。注文の部分だけを貼り付けてください。" };
   const parsed = parseOrderMail(text);
   if (!parsed) {
-    return { ok: false, message: "対応しているショップのメールではないようです（今はドスパラの「ご注文確定のお知らせ」に対応）。" };
+    return {
+      ok: false,
+      message: `対応しているショップの注文確認メールではないようです（今の対応：${SUPPORTED_SHOPS.join("・")}）。`,
+    };
   }
 
   const [supplier] = await query<{ id: number }>(`SELECT id FROM core.suppliers WHERE name = $1`, [parsed.supplierName]);
@@ -42,13 +45,13 @@ export async function createDraftFromMail(
     }
   }
 
-  const lines: DraftLine[] = parsed.lines.map((l) => ({ ...l, itemKey: itemKey(l.description) }));
+  const lines: DraftLine[] = parsed.lines.map((l) => ({ ...l, itemKey: itemKey(l.key ?? l.description) }));
   try {
     const id = await withActor({ kind: "user", userId: actorId }, async (client) => {
       const r = await client.query<{ id: number }>(
         `INSERT INTO core.purchase_drafts (source, source_ref, parser, supplier_id, supplier_order_no, ordered_on,
-                                           payment_method, total_amount, lines, issues, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+                                           payment_method, total_amount, tax_amount, lines, issues, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
         [
           source.kind,
           source.kind === "email" ? source.ref : null,
@@ -58,6 +61,7 @@ export async function createDraftFromMail(
           parsed.orderedOn,
           parsed.paymentMethod,
           parsed.total,
+          parsed.tax,
           JSON.stringify(lines),
           issues,
           actorId,
@@ -114,6 +118,8 @@ export type DraftView = {
   orderedOn: string | null;
   paymentMethod: PaymentMethod | null;
   total: number | null;
+  /** メールに書いてあった「うち消費税」 */
+  tax: number | null;
   issues: string[];
   status: string;
   purchaseId: number | null;
@@ -125,7 +131,7 @@ export async function getDraft(id: number): Promise<DraftView | null> {
   if (!Number.isSafeInteger(id) || id <= 0) return null;
   const [d] = await query<Omit<DraftView, "lines"> & { lines: DraftLine[] }>(
     `SELECT id, parser, supplier_id AS "supplierId", supplier_order_no AS "orderNo", ordered_on AS "orderedOn",
-            payment_method AS "paymentMethod", total_amount AS total, issues, status, purchase_id AS "purchaseId", lines
+            payment_method AS "paymentMethod", total_amount AS total, tax_amount AS tax, issues, status, purchase_id AS "purchaseId", lines
        FROM core.purchase_drafts WHERE id = $1`,
     [id],
   );
@@ -203,7 +209,8 @@ export async function confirmDraft(actorId: number, draftId: number, input: Conf
     paymentMethod,
     lines,
     total,
-    tax: splitTax10(total).tax,
+    // メールに消費税が書いてあればその額、なければ合計から計算する
+    tax: draft.tax !== null && draft.tax <= total ? draft.tax : splitTax10(total).tax,
   };
   try {
     const purchaseId = await withActor({ kind: "user", userId: actorId }, async (client) => {

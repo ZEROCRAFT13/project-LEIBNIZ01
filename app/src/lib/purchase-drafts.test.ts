@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getPool, query } from "@/lib/db";
 import { getPurchase } from "@/lib/purchasing";
-import { dosparaMail } from "@/test/mail-fixtures";
+import { amazonMail, dosparaMail, joshinMail } from "@/test/mail-fixtures";
 import { confirmDraft, createDraftFromMail, discardDraft, getDraft, listOpenDrafts } from "./purchase-drafts";
 
 let owner: number;
@@ -141,5 +141,56 @@ describe("確定できないとき・捨てるとき", () => {
   it("対応していないメールや空の本文は、そう伝える", async () => {
     expect(await createDraftFromMail(owner, "こんにちは")).toMatchObject({ ok: false, message: expect.stringContaining("対応しているショップ") });
     expect(await createDraftFromMail(owner, "  ")).toMatchObject({ ok: false, message: "メールの本文を貼り付けてください。" });
+  });
+});
+
+describe("Joshin と Amazon のメール", () => {
+  it("Joshin：メールの「うち消費税」をそのまま仕入れの消費税にする。型番の対応はショップの商品番号で覚える", async () => {
+    const r = await createDraftFromMail(owner, joshinMail({ orderNo: "66000101" }));
+    if (!r.ok) throw new Error(r.message);
+    const d = await getDraft(r.id);
+    expect(d).toMatchObject({ parser: "joshin", total: 49960, tax: 4542, orderedOn: "2026-01-18", issues: [] });
+    expect(d?.lines[0].itemKey).toBe("joshin:4500000000001");
+    const joshin = (await query<{ id: number }>("SELECT id FROM core.suppliers WHERE name = 'Joshin'"))[0].id;
+    expect(d?.supplierId).toBe(joshin);
+
+    const c = await confirmDraft(owner, r.id, {
+      supplierId: joshin,
+      orderedOn: "2026-01-18",
+      paymentMethod: "card",
+      choices: [{ partModelId: b850 }],
+    });
+    if (!c.ok) throw new Error(c.message);
+    expect(await getPurchase(c.purchaseId)).toMatchObject({ total: 49960, tax: 4542 });
+
+    // 商品名の書き方が変わっても、商品番号が同じなら同じ商品と見なす
+    const r2 = await createDraftFromMail(
+      owner,
+      joshinMail({ orderNo: "66000102", items: [{ no: "4500000000001", name: "名前が変わった B850", model: "B850-ATX", unit: 24980, qty: 1 }] }),
+    );
+    if (!r2.ok) throw new Error(r2.message);
+    expect((await getDraft(r2.id))?.lines[0].suggestedModelId).toBe(b850);
+  });
+
+  it("Amazon：単価×数量で明細を作り、合計が合えば確定できる。商品名が途中までのことを知らせる", async () => {
+    const r = await createDraftFromMail(owner, amazonMail({ orderNo: "249-0000101-0000101" }));
+    if (!r.ok) throw new Error(r.message);
+    const d = await getDraft(r.id);
+    expect(d?.issues[0]).toContain("商品名が途中まで");
+    const memory = (await query<{ id: number }>("SELECT id FROM core.part_models WHERE model_no = 'D5-5600-16X2'"))[0].id;
+    const amazon = (await query<{ id: number }>("SELECT id FROM core.suppliers WHERE name = 'Amazon'"))[0].id;
+    const c = await confirmDraft(owner, r.id, {
+      supplierId: amazon,
+      orderedOn: "2026-02-23",
+      paymentMethod: "card",
+      choices: [{ partModelId: memory }, { partModelId: nvme }],
+    });
+    if (!c.ok) throw new Error(c.message);
+    const p = await getPurchase(c.purchaseId);
+    expect(p?.lines.map((l) => [l.qty, l.unitPrice])).toEqual([
+      [2, 21980],
+      [3, 12980],
+    ]);
+    expect(p?.total).toBe(82900);
   });
 });
