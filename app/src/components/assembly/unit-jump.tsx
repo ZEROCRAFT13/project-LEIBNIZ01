@@ -4,8 +4,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { isMgmtNo, normalizeCode, normalizeSearch } from "@/lib/codes";
 
-// 本体や箱の管理番号シールを読むと、その個体の組立画面に移る
-export function UnitJump() {
+// 本体や箱の管理番号シールを読むと、その個体の組立（または検品）の画面に移る
+export function UnitJump({
+  basePath = "/assembly",
+  label = "管理番号のシールを読む（続きから組み立てる）",
+}: {
+  basePath?: "/assembly" | "/inspection";
+  label?: string;
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -21,11 +27,11 @@ export function UnitJump() {
           input.select();
           return;
         }
-        router.push(`/assembly/${code}`);
+        router.push(`${basePath}/${code}`);
       }}
     >
       <label htmlFor="unit-code" className="text-sm font-medium">
-        管理番号のシールを読む（続きから組み立てる）
+        {label}
       </label>
       <div className="flex gap-2">
         <input

@@ -231,17 +231,38 @@ UPDATE core.part_models SET jan_code = '2000000000015' WHERE model_no = 'MT-ATX'
 UPDATE core.part_models SET jan_code = '2000000000022' WHERE model_no = 'GD850';
 
 -- ---------- 検品 ----------
-INSERT INTO core.inspections (unit_id, inspector_id, started_at, finished_at, stress_test_minutes,
-                              max_cpu_temp_c, max_gpu_temp_c, noise_db, checklist, result, note)
-VALUES
-  (pg_temp.unit('ZB-2608-0077'), pg_temp.usr('owner@zerobit.example'), '2026-08-23 09:00+09', '2026-08-23 11:00+09',
-   120, 74.0, 66.5, 36.5, '{"配線":true,"外観":true,"BIOS更新":true,"Windows認証":true}', 'pass', NULL),
-  (pg_temp.unit('ZB-2609-0102'), pg_temp.usr('owner@zerobit.example'), '2026-09-09 08:00+09', '2026-09-09 10:00+09',
-   120, 77.0, 70.0, 37.5, '{"配線":true,"外観":true,"BIOS更新":true,"Windows認証":true}', 'pass', NULL),
-  (pg_temp.unit('ZB-2609-0118'), pg_temp.usr('owner@zerobit.example'), '2026-09-20 11:00+09', '2026-09-20 13:00+09',
-   120, 78.5, 71.0, 38.0, '{"配線":true,"外観":true,"BIOS更新":true,"Windows認証":true}', 'pass', NULL),
-  (pg_temp.unit('ZB-2609-0119'), pg_temp.usr('owner@zerobit.example'), '2026-09-20 13:00+09', '2026-09-20 15:00+09',
-   120, 77.5, 69.5, 37.0, '{"配線":true,"外観":true,"BIOS更新":true,"Windows認証":true}', 'pass', NULL);
+-- 出荷済みなどの個体の、過去の検品（3段階）。今の決まり（検品中の個体だけ記録できる）を通さずに入れるため、
+-- この部分だけトリガーを止める（開発用のダミーデータだけ。監査ログにも残らない）
+SET LOCAL session_replication_role = replica;
+INSERT INTO core.inspections (unit_id, inspector_id, stage, started_at, finished_at, stress_test_minutes,
+                              max_cpu_temp_c, max_gpu_temp_c, noise_db, checklist, benchmarks, result)
+SELECT pg_temp.unit(v.mgmt_no), pg_temp.usr('owner@zerobit.example'), st.stage,
+       v.day + st.start_at, v.day + st.end_at,
+       CASE WHEN st.stage = 'software' THEN 120 END,
+       CASE WHEN st.stage = 'software' THEN v.cpu END,
+       CASE WHEN st.stage = 'software' THEN v.gpu END,
+       CASE WHEN st.stage = 'software' THEN v.noise END,
+       st.checklist,
+       CASE WHEN st.stage = 'software'
+            THEN jsonb_build_array(jsonb_build_object('name', 'Cinebench R23 マルチ', 'score', v.cb),
+                                   jsonb_build_object('name', '3DMark Time Spy', 'score', v.ts))
+            ELSE '[]'::jsonb END,
+       'pass'
+FROM (VALUES
+  ('ZB-2608-0077', timestamptz '2026-08-23 00:00+09', 74.0, 66.5, 36.5, 15200, 11800),
+  ('ZB-2609-0102', timestamptz '2026-09-09 00:00+09', 77.0, 70.0, 37.5, 19100, 17400),
+  ('ZB-2609-0118', timestamptz '2026-09-20 00:00+09', 78.5, 71.0, 38.0, 19000, 17300),
+  ('ZB-2609-0119', timestamptz '2026-09-20 00:00+09', 77.5, 69.5, 37.0, 19200, 17500)
+) AS v(mgmt_no, day, cpu, gpu, noise, cb, ts)
+CROSS JOIN (VALUES
+  ('assembled', interval '8 hours',  interval '8 hours 20 minutes',
+   '{"配線の取り回し（ファンに当たらない・まとめてある）":true,"電源・PCIe・フロントパネルのコネクタがしっかり刺さっている":true,"内部の傷・汚れ・ネジの締め忘れがない":true,"ファンの向きと回転（仮に電源を入れて確認）":true}'::jsonb),
+  ('software',  interval '8 hours 30 minutes', interval '10 hours 40 minutes',
+   '{"BIOS の更新と設定（XMP/EXPO など）":true,"Windows のインストール":true,"Windows のライセンス認証":true,"Windows Update とドライバー":true,"メモリテストでエラーなし":true,"SSD の健康状態が正常（CrystalDiskInfo など）":true,"USB 端子（前面・背面）":true,"音声の出力":true,"有線 LAN":true,"Wi-Fi・Bluetooth":"na"}'::jsonb),
+  ('final',     interval '10 hours 45 minutes', interval '11 hours',
+   '{"外観（傷・汚れ・指紋）":true,"付属品（説明書・電源ケーブル・保証書）":true,"管理番号シール（本体と箱）":true,"起動して画面が映る（出荷直前）":true,"梱包（緩衝材・固定）":true}'::jsonb)
+) AS st(stage, start_at, end_at, checklist);
+SET LOCAL session_replication_role = origin;
 
 -- ---------- 顧客（番号だけ。個人情報は入れない）と注文 ----------
 INSERT INTO core.customers (is_corporate) VALUES (false), (false), (false);

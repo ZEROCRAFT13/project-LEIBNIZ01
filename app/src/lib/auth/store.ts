@@ -27,6 +27,8 @@ export const ASSEMBLY_ROLES = ["assembler", "factory_manager"];
 export const MANAGER_ROLES = ["ceo", "factory_manager"];
 /** 仕入れと入荷を登録できる役割 */
 export const PURCHASE_ROLES = ["ceo", "factory_manager"];
+/** 検品できる役割（バイトは「検品を任せる」で inspector を付けた人だけ。組み立てた本人はできない） */
+export const INSPECTION_ROLES = ["ceo", "factory_manager", "inspector"];
 /** 書類（領収書・保証書など）を取り込み・整理できる役割 */
 export const DOCUMENT_ROLES = ["ceo", "admin_lead", "factory_manager"];
 
@@ -385,13 +387,18 @@ export type WorkerAccount = {
   hasPin: boolean;
   locked: boolean;
   failedCount: number;
+  /** 検品を任せている（inspector の役割がある） */
+  inspector: boolean;
 };
 
 /** 組立の役割を持つ人と、PINの状態 */
 export async function listWorkerAccounts(): Promise<WorkerAccount[]> {
   return query<WorkerAccount>(
     `SELECT u.id, u.display_name AS name, u.kind, p.user_id IS NOT NULL AS "hasPin",
-            p.locked_at IS NOT NULL AS locked, coalesce(p.failed_count, 0) AS "failedCount"
+            p.locked_at IS NOT NULL AS locked, coalesce(p.failed_count, 0) AS "failedCount",
+            EXISTS (SELECT 1 FROM core.role_assignments ri
+                     WHERE ri.user_id = u.id AND ri.role_code = 'inspector'
+                       AND ri.valid_from <= now() AND (ri.valid_to IS NULL OR ri.valid_to > now())) AS inspector
        FROM core.users u
        LEFT JOIN auth.worker_pins p ON p.user_id = u.id
       WHERE u.active
@@ -473,5 +480,26 @@ export async function deactivatePartTimer(actorId: number, userId: number): Prom
     await client.query(`UPDATE auth.sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [
       userId,
     ]);
+  });
+}
+
+/** バイトに検品を任せる／やめる（inspector の役割を付ける・終える。履歴は残る） */
+export async function setInspector(actorId: number, userId: number, on: boolean): Promise<void> {
+  await withActor({ kind: "user", userId: actorId }, async (client) => {
+    const u = await client.query(`SELECT 1 FROM core.users WHERE id = $1 AND active AND kind = 'part_time'`, [userId]);
+    if (u.rowCount !== 1) throw new AccountError("検品を任せる印は、バイトにだけ付けます（代表・工場長はもとから検品できます）。");
+    const current = await client.query<{ id: number }>(
+      `SELECT id FROM core.role_assignments
+        WHERE user_id = $1 AND role_code = 'inspector'
+          AND valid_from <= now() AND (valid_to IS NULL OR valid_to > now())`,
+      [userId],
+    );
+    if (on && current.rowCount === 0) {
+      await client.query(`INSERT INTO core.role_assignments (role_code, user_id) VALUES ('inspector', $1)`, [userId]);
+    } else if (!on && current.rowCount) {
+      await client.query(`UPDATE core.role_assignments SET valid_to = now() WHERE id = ANY($1)`, [
+        current.rows.map((r) => r.id),
+      ]);
+    }
   });
 }

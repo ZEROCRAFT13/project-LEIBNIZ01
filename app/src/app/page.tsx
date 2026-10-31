@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { Loading } from "@/components/ui";
-import { canAssemble, canDocuments, canManage, canPurchase, requireUser } from "@/lib/auth/session";
+import { canAssemble, canDocuments, canInspect, canManage, canPurchase, requireUser } from "@/lib/auth/session";
 
 // 仮のトップページ。ホーム（コントロールパネル）はフェーズ1の最後に作る
 export default function Home({ searchParams }: PageProps<"/">) {
@@ -52,6 +52,15 @@ async function Menu({ searchParams }: { searchParams: PageProps<"/">["searchPara
             href: "/labels",
             title: "管理番号シール",
             text: "発行した管理番号の QR シールを PT-P700（24mm テープ）で刷る。本体と箱に1枚ずつ",
+          },
+        ]
+      : []),
+    ...(canInspect(viewer)
+      ? [
+          {
+            href: "/inspection",
+            title: "検品",
+            text: "組み上がった個体を3段階（組立状態・Windows とベンチマーク・出荷直前）で確かめ、写真と測った値を残す",
           },
         ]
       : []),

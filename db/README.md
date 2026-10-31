@@ -18,8 +18,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0010_sku_composition.sql` | 構成表を画面から直すための決まり（枠と同じ種類の型番だけ、組立中の機種の枠は消せない、使ってよい型番の付け外しを監査ログへ） |
 | `migrations/0011_optional_slots_and_notes.sql` | 枠の「付けなくてもよい」と「自由枠」、個体のメモ（unit_notes） |
 | `migrations/0012_label_printed.sql` | 個体の管理番号シールを刷った時刻（units.label_printed_at）。まだ刷っていない個体を一覧に出す |
+| `migrations/0013_inspection_stages.sql` | 検品の3段階（①組立状態 ②Windows とベンチマーク ③出荷直前）、写真（inspection_photos）、検品担当の役割、温度・騒音の上限とチェック項目の初期値（settings） |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（106項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（135項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 3つの区画
 
@@ -35,7 +36,7 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 - **人と役割**: `users`, `roles`, `role_assignments`（いつから誰がその役割か）
 - **部品とSKU**: `part_models`（型番）, `skus`, `sku_slots`（構成の枠）, `sku_slot_options`（枠に使ってよい型番）
 - **仕入れ**: `suppliers`, `purchases`, `purchase_lines`, `purchase_shipments`（発送・追跡番号）, `purchase_drafts`（メールから作る下書き）, `supplier_item_aliases`（ショップの商品名→型番）
-- **在庫**: `part_items`（部品1個ずつ）, `units`（個体＝管理番号）, `unit_parts`（個体に入っている部品と交換履歴）, `inspections`, `asset_transfers`（区分の振替）
+- **在庫**: `part_items`（部品1個ずつ）, `units`（個体＝管理番号）, `unit_parts`（個体に入っている部品と交換履歴）, `inspections`（段階ごとの検品の記録。直せない・消せない）, `inspection_photos`（配線・起動などの写真）, `asset_transfers`（区分の振替）
 - **FBA**: `fba_shipments`, `fba_shipment_units`, `fba_inventory_snapshots`
 - **販売**: `customers`, `orders`, `order_lines`, `order_units`（注文と個体の紐づけ）, `product_registrations`（QRの製品登録）
 - **受信箱**: `conversations`, `messages`（本文は `pii.message_bodies`）

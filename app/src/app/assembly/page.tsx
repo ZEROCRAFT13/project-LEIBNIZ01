@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { UnitJump } from "@/components/assembly/unit-jump";
 import { Card, Loading } from "@/components/ui";
 import { listInProgress, listSkus } from "@/lib/assembly";
-import { requireAssembler } from "@/lib/auth/session";
+import { canInspect, requireAssembler } from "@/lib/auth/session";
 import { startUnitAction } from "./actions";
 
 export const metadata: Metadata = { title: "組立 | ZERO-BIT" };
@@ -39,9 +39,16 @@ async function AssemblyHome() {
         </div>
       </Card>
 
-      <Link href="/labels" className="text-sm text-blue-800 underline">
-        管理番号シールを刷る（事務所の PC・PT-P700）
-      </Link>
+      <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+        {canInspect(viewer) && (
+          <Link href="/inspection" className="font-bold text-blue-800 underline">
+            検品する
+          </Link>
+        )}
+        <Link href="/labels" className="text-blue-800 underline">
+          管理番号シールを刷る（事務所の PC・PT-P700）
+        </Link>
+      </div>
 
       <Card title={`組立中 ${inProgress.length}台`}>
         {inProgress.length === 0 ? (

@@ -80,6 +80,7 @@ export type AssemblyView = {
   status: string;
   sku: { code: string; name: string };
   assembledBy: string | null;
+  assembledById: number | null;
   canScan: boolean;
   slots: AssemblySlot[];
   filled: number;
@@ -97,8 +98,10 @@ export async function getAssembly(rawMgmtNo: string): Promise<AssemblyView | nul
     sku_code: string;
     sku_name: string;
     assembled_by: string | null;
+    assembled_by_id: number | null;
   }>(
-    `SELECT u.id, u.sku_id, u.status, s.code AS sku_code, s.name AS sku_name, us.display_name AS assembled_by
+    `SELECT u.id, u.sku_id, u.status, s.code AS sku_code, s.name AS sku_name, us.display_name AS assembled_by,
+            u.assembled_by AS assembled_by_id
        FROM core.units u JOIN core.skus s ON s.id = u.sku_id
        LEFT JOIN core.users us ON us.id = u.assembled_by
       WHERE u.mgmt_no = $1`,
@@ -159,6 +162,7 @@ export async function getAssembly(rawMgmtNo: string): Promise<AssemblyView | nul
     status: unit.status,
     sku: { code: unit.sku_code, name: unit.sku_name },
     assembledBy: unit.assembled_by,
+    assembledById: unit.assembled_by_id,
     canScan: OPEN_STATUSES.includes(unit.status),
     slots,
     filled,

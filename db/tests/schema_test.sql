@@ -548,4 +548,122 @@ SELECT pg_temp.check(
     WHERE table_name = 'core.units' AND action = 'UPDATE' ORDER BY id DESC LIMIT 1),
   'シールを刷った記録が監査ログに残る');
 
+-- ---------- 検品の3段階と写真（0013_inspection_stages） ----------
+SELECT pg_temp.check((SELECT count(*) = 1 FROM core.roles WHERE code = 'inspector'), '検品担当の役割がある');
+SELECT pg_temp.check(
+  (SELECT (l.value ? 'maxCpuTempC') AND jsonb_array_length(c.value->'final') > 0
+     FROM core.settings l, core.settings c
+    WHERE l.key = 'inspection.limits' AND c.key = 'inspection.checklist'),
+  '検品の上限とチェックリストの初期値が入っている');
+SET ROLE zb_app;
+INSERT INTO core.units (mgmt_no, sku_id, status, assembled_by) VALUES ('ZB-2611-0901', 1, 'assembling', 2);
+CREATE TEMP VIEW insp_unit AS SELECT id FROM core.units WHERE mgmt_no = 'ZB-2611-0901';
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result) SELECT id, 1, 'assembled', 'fail' FROM insp_unit$$,
+  '組立中（検品中でない）の個体を検品');
+UPDATE core.units SET status = 'inspecting', assembled_at = now() WHERE mgmt_no = 'ZB-2611-0901';
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result, note, next_action)
+    SELECT id, 2, 'assembled', 'fail', 'x', 'retry' FROM insp_unit$$,
+  '組み立てた本人が検品');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result) SELECT id, 1, 'assembled', 'pass' FROM insp_unit$$,
+  '配線の写真なしで①に合格');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result, stress_test_minutes, max_cpu_temp_c)
+    SELECT id, 1, 'software', 'pass', 60, 70 FROM insp_unit$$,
+  '①の前に②を記録');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspection_photos (unit_id, stage, kind, storage_uri, sha256, mime_type, size_bytes, taken_by)
+    SELECT id, 'assembled', 'boot', 'local:aa/x.jpg', repeat('a', 64), 'image/jpeg', 100, 1 FROM insp_unit$$,
+  '①に起動の写真（段階と種類が合わない）');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspection_photos (unit_id, stage, kind, storage_uri, sha256, mime_type, size_bytes, taken_by)
+    SELECT id, 'assembled', 'wiring', 'local:aa/x.pdf', repeat('a', 64), 'application/pdf', 100, 1 FROM insp_unit$$,
+  '写真でないファイル');
+INSERT INTO core.inspection_photos (unit_id, stage, kind, storage_uri, sha256, mime_type, size_bytes, taken_by)
+SELECT id, 'assembled', 'wiring', 'local:aa/' || repeat('a', 64) || '.jpg', repeat('a', 64), 'image/jpeg', 100, 1 FROM insp_unit;
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result) SELECT id, 1, 'assembled', 'fail' FROM insp_unit$$,
+  '不合格なのに理由と次の手（やり直す／組立に戻す）がない');
+INSERT INTO core.inspections (unit_id, inspector_id, stage, result, checklist)
+SELECT id, 1, 'assembled', 'pass', '{"配線":true}' FROM insp_unit;
+UPDATE core.inspection_photos SET inspection_id = (SELECT max(id) FROM core.inspections)
+ WHERE unit_id = (SELECT id FROM insp_unit) AND inspection_id IS NULL;
+SELECT pg_temp.check(
+  (SELECT finished_at IS NOT NULL FROM core.inspections WHERE id = (SELECT max(id) FROM core.inspections)),
+  '①に合格した（終わった時刻はデータベースが入れる）');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result) SELECT id, 1, 'assembled', 'pass' FROM insp_unit$$,
+  '合格した段階をもう一度記録');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result) SELECT id, 1, 'software', 'pass' FROM insp_unit$$,
+  '負荷試験の時間と CPU 温度なしで②に合格');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result, stress_test_minutes, max_cpu_temp_c, warnings)
+    SELECT id, 1, 'software', 'pass', 60, 95, ARRAY['CPU 95℃（上限 90℃）'] FROM insp_unit$$,
+  '上限を超えたのに理由なしで合格');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result, stress_test_minutes, max_cpu_temp_c)
+    SELECT id, 1, 'software', 'pass', 60, 300 FROM insp_unit$$,
+  'ありえない温度');
+INSERT INTO core.inspections (unit_id, inspector_id, stage, result, note, next_action)
+SELECT id, 1, 'software', 'fail', 'Windows の認証が通らない', 'retry' FROM insp_unit;
+INSERT INTO core.inspections (unit_id, inspector_id, stage, result, stress_test_minutes, max_cpu_temp_c, warnings, warning_reason,
+                              benchmarks)
+SELECT id, 1, 'software', 'pass', 60, 92, ARRAY['CPU 92℃（上限 90℃）'], '室温 32℃。メーカーの許容内', '[{"name":"Cinebench","score":19000}]'
+  FROM insp_unit;
+SELECT pg_temp.check(
+  (SELECT count(*) = 2 FROM core.inspections WHERE unit_id = (SELECT id FROM insp_unit) AND stage = 'software'),
+  '②は不合格のあとやり直して、理由を書いて合格');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result) SELECT id, 1, 'final', 'pass' FROM insp_unit$$,
+  '起動の写真なしで③に合格');
+INSERT INTO core.inspection_photos (unit_id, stage, kind, storage_uri, sha256, mime_type, size_bytes, taken_by)
+SELECT id, 'final', 'boot', 'local:bb/' || repeat('b', 64) || '.jpg', repeat('b', 64), 'image/jpeg', 100, 1 FROM insp_unit;
+INSERT INTO core.inspections (unit_id, inspector_id, stage, result) SELECT id, 1, 'final', 'pass' FROM insp_unit;
+SELECT pg_temp.check(
+  (SELECT count(*) = 4 FROM core.inspections WHERE unit_id = (SELECT id FROM insp_unit)),
+  '③まで記録できた');
+
+-- 記録と写真は直せない・消せない
+SELECT pg_temp.expect_error($$UPDATE core.inspections SET result = 'fail'$$, 'アプリ本体が検品の記録を直す');
+SELECT pg_temp.expect_error($$DELETE FROM core.inspections$$, 'アプリ本体が検品の記録を消す');
+SELECT pg_temp.expect_error($$DELETE FROM core.inspection_photos$$, '写真を消す');
+SELECT pg_temp.expect_error($$UPDATE core.inspection_photos SET sha256 = repeat('c', 64)$$, '写真の中身を差し替える');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.inspection_photos SET removed_at = now(), removed_by = 1 WHERE kind = 'wiring'$$,
+  '記録に使った写真を取り消す');
+RESET ROLE;
+SELECT pg_temp.expect_error($$UPDATE core.inspections SET note = 'x'$$, '管理者でも検品の記録は直せない');
+SET ROLE zb_app;
+
+-- 組立に戻したら①からやり直し（前の回の合格・写真は使えない）
+UPDATE core.units SET status = 'assembling' WHERE mgmt_no = 'ZB-2611-0901';
+UPDATE core.units SET status = 'inspecting', assembled_at = now() WHERE mgmt_no = 'ZB-2611-0901';
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result, stress_test_minutes, max_cpu_temp_c)
+    SELECT id, 1, 'software', 'pass', 60, 70 FROM insp_unit$$,
+  '組立に戻したあと、①をとばして②');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result) SELECT id, 1, 'assembled', 'pass' FROM insp_unit$$,
+  '組立に戻したあと、前の回の写真で①に合格');
+INSERT INTO core.inspection_photos (unit_id, stage, kind, storage_uri, sha256, mime_type, size_bytes, taken_by)
+SELECT id, 'assembled', 'wiring', 'local:cc/' || repeat('c', 64) || '.jpg', repeat('c', 64), 'image/jpeg', 100, 1 FROM insp_unit;
+UPDATE core.inspection_photos SET removed_at = now(), removed_by = 1 WHERE sha256 = repeat('c', 64);
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.inspections (unit_id, inspector_id, stage, result) SELECT id, 1, 'assembled', 'pass' FROM insp_unit$$,
+  '取り消した写真で①に合格');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.inspection_photos SET removed_at = NULL, removed_by = NULL WHERE sha256 = repeat('c', 64)$$,
+  '取り消した写真を戻す');
+RESET ROLE;
+SELECT pg_temp.check(
+  (SELECT count(*) >= 4 FROM audit.log WHERE table_name = 'core.inspection_photos'),
+  '写真の追加・ひもづけ・取り消しが監査ログに残る');
+SELECT pg_temp.check(
+  (SELECT count(*) = 4 FROM audit.log WHERE table_name = 'core.inspections'
+     AND row_id IN (SELECT id::text FROM core.inspections WHERE unit_id = (SELECT id FROM insp_unit))),
+  '検品の記録が監査ログに残る');
+
 \echo ALL TESTS PASSED
