@@ -74,9 +74,19 @@ export const rmaStatusLabel: Record<string, string> = {
 
 export const purchaseStatusLabel: Record<string, string> = {
   ordered: "注文済み",
+  in_transit: "輸送中",
   partially_received: "一部入荷",
   received: "入荷済み",
   cancelled: "取消",
+};
+
+export const carrierLabel: Record<string, string> = {
+  yamato: "ヤマト運輸",
+  sagawa: "佐川急便",
+  japanpost: "日本郵便",
+  seino: "西濃運輸",
+  amazon: "Amazon配送",
+  other: "その他",
 };
 
 export const paymentMethodLabel: Record<string, string> = {

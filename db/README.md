@@ -11,8 +11,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0003_tokyo_dates.sql` | 日付を日本時間で数える |
 | `migrations/0004_auth.sql` | ログイン（`auth` 区画）。バイトはメールアドレスなしで登録できる |
 | `migrations/0005_receiving.sql` | 入荷。仕入れの数より多く入荷できない・型番違いを止める。仕入れの状態を自動で決める |
+| `migrations/0006_purchase_shipments.sql` | 仕入れの発送（運送会社・追跡番号、何個口でも）。発送があれば「輸送中」 |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（66項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（74項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 3つの区画
 
@@ -27,7 +28,7 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 
 - **人と役割**: `users`, `roles`, `role_assignments`（いつから誰がその役割か）
 - **部品とSKU**: `part_models`（型番）, `skus`, `sku_slots`（構成の枠）, `sku_slot_options`（枠に使ってよい型番）
-- **仕入れ**: `suppliers`, `purchases`, `purchase_lines`
+- **仕入れ**: `suppliers`, `purchases`, `purchase_lines`, `purchase_shipments`（発送・追跡番号）
 - **在庫**: `part_items`（部品1個ずつ）, `units`（個体＝管理番号）, `unit_parts`（個体に入っている部品と交換履歴）, `inspections`, `asset_transfers`（区分の振替）
 - **FBA**: `fba_shipments`, `fba_shipment_units`, `fba_inventory_snapshots`
 - **販売**: `customers`, `orders`, `order_lines`, `order_units`（注文と個体の紐づけ）, `product_registrations`（QRの製品登録）

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { ArrivalScan } from "@/components/purchases/arrival-scan";
 import { Card, Loading, Tag } from "@/components/ui";
 import { requirePurchaser } from "@/lib/auth/session";
 import { yen, ymd } from "@/lib/format";
@@ -30,6 +31,7 @@ export default function PurchasesPage() {
 
 const statusTone = {
   ordered: "amber",
+  in_transit: "blue",
   partially_received: "blue",
   received: "green",
   cancelled: "gray",
@@ -38,22 +40,29 @@ const statusTone = {
 async function PurchaseList() {
   await requirePurchaser("/purchases");
   const rows = await listPurchases();
-  const waiting = rows.filter((r) => r.status === "ordered" || r.status === "partially_received");
+  const waiting = rows.filter((r) => ["ordered", "in_transit", "partially_received"].includes(r.status));
 
   return (
-    <Card title={`入荷待ち ${waiting.length}件`} aside="入荷待ちを上に、新しい順">
-      {rows.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-stone-600">まだ仕入れがありません。</p>
-      ) : (
-        <ul>
-          {rows.map((r) => (
-            <li key={r.id} className="border-b border-stone-100 last:border-0">
-              <Row row={r} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
+    <>
+      <Card>
+        <div className="p-5">
+          <ArrivalScan />
+        </div>
+      </Card>
+      <Card title={`入荷待ち ${waiting.length}件`} aside="入荷待ちを上に、新しい順">
+        {rows.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-stone-600">まだ仕入れがありません。</p>
+        ) : (
+          <ul>
+            {rows.map((r) => (
+              <li key={r.id} className="border-b border-stone-100 last:border-0">
+                <Row row={r} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </>
   );
 }
 
@@ -68,7 +77,9 @@ function Row({ row }: { row: PurchaseRow }) {
       <span className="hidden font-mono text-sm text-stone-600 sm:block">{row.orderNo ?? "—"}</span>
       <span className="text-right font-mono">{yen(row.total)}</span>
       <span className="col-span-3 flex items-center gap-2 sm:col-span-1 sm:justify-end">
-        <Tag tone={statusTone[row.status as keyof typeof statusTone] ?? "gray"}>{label(purchaseStatusLabel, row.status)}</Tag>
+        <Tag tone={statusTone[row.status as keyof typeof statusTone] ?? "gray"}>
+          {label(purchaseStatusLabel, row.status)}
+        </Tag>
         <span className="text-xs text-stone-600">
           {row.received}/{row.expected}点
         </span>

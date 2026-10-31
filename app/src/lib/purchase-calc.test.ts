@@ -1,6 +1,13 @@
 // 仕入れの金額の計算と入力の確かめ（お金の計算なので必ずテストする: CLAUDE.md ルール10）
 import { describe, expect, it } from "vitest";
-import { normalizeBoxLocation, parsePurchaseInput, purchaseTotals, splitTax10 } from "./purchase-calc";
+import {
+  isTrackingNo,
+  normalizeBoxLocation,
+  normalizeTracking,
+  parsePurchaseInput,
+  purchaseTotals,
+  splitTax10,
+} from "./purchase-calc";
 
 describe("税込価格を税抜と消費税に分ける（10%）", () => {
   it.each([
@@ -133,5 +140,24 @@ describe("元箱の棚番", () => {
     [" B ー 07 ", "B-07"],
   ])("%s → %s", (raw, expected) => {
     expect(normalizeBoxLocation(raw)).toBe(expected);
+  });
+});
+
+describe("追跡番号をそろえる", () => {
+  it.each([
+    ["1234-5678-9012", "123456789012"],
+    ["１２３４ ５６７８ ９０１２", "123456789012"],
+    ["a123456789012a", "123456789012"], // 送り状のバーコード（Codabar）の前後の文字
+    ["D123456789012B", "123456789012"],
+    ["tba-123456789", "TBA123456789"],
+    ["AB12", "AB12"],
+  ])("%s → %s", (raw, expected) => {
+    expect(normalizeTracking(raw)).toBe(expected);
+  });
+
+  it("追跡番号として使える形か", () => {
+    expect(isTrackingNo("123456789012")).toBe(true);
+    expect(isTrackingNo("12345")).toBe(false);
+    expect(isTrackingNo("1234-5678")).toBe(false);
   });
 });

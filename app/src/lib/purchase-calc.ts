@@ -142,3 +142,25 @@ export function normalizeBoxLocation(raw: string): string {
     .replace(/[‐‑‒–—―ー−－]/g, "-")
     .replace(/\s+/g, "");
 }
+
+// ---------------------------------------------------------------------
+// 発送（追跡番号）
+// ---------------------------------------------------------------------
+
+export const CARRIERS = ["yamato", "sagawa", "japanpost", "seino", "amazon", "other"] as const;
+export type Carrier = (typeof CARRIERS)[number];
+
+/**
+ * 追跡番号をそろえる。ハイフン・空白を取り、全角を半角・英字を大文字にする。
+ * 送り状のバーコード（Codabar）を読むと前後に A〜D が付くことがあるので、数字を挟んでいれば外す。
+ * 例: 「1234-5678-9012」「ａ123456789012ａ」→ 123456789012
+ */
+export function normalizeTracking(raw: string): string {
+  const s = raw.normalize("NFKC").toUpperCase().replace(/[^0-9A-Z]/g, "");
+  const codabar = s.match(/^[A-D](\d{6,30})[A-D]$/);
+  return codabar ? codabar[1] : s;
+}
+
+export function isTrackingNo(s: string): boolean {
+  return /^[0-9A-Z]{6,30}$/.test(s);
+}
