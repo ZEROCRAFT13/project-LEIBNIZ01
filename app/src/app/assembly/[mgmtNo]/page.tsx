@@ -6,7 +6,7 @@ import { ScanConsole } from "@/components/assembly/scan-console";
 import { Loading } from "@/components/ui";
 import { getAssembly, type AssemblySlot } from "@/lib/assembly";
 import { label, unitStatusLabel } from "@/lib/labels";
-import { getCurrentWorker } from "@/lib/worker-session";
+import { requireAssembler } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "組立 | ZERO-BIT" };
 
@@ -30,7 +30,10 @@ async function AssemblyUnit({
   params: PageProps<"/assembly/[mgmtNo]">["params"];
   searchParams: PageProps<"/assembly/[mgmtNo]">["searchParams"];
 }) {
-  const [{ mgmtNo }, { new: isNew }, worker] = await Promise.all([params, searchParams, getCurrentWorker()]);
+  const [{ mgmtNo }, { new: isNew }] = await Promise.all([params, searchParams]);
+  const viewer = await requireAssembler(`/assembly/${mgmtNo}`);
+  // 個体トレース（注文番号などが出る）は、組立端末のPINでは開けない
+  const canTrace = viewer.kind === "user";
   const view = await getAssembly(decodeURIComponent(mgmtNo));
   if (!view) notFound();
 
@@ -41,7 +44,7 @@ async function AssemblyUnit({
       <header className="flex flex-col gap-2 rounded-lg bg-stone-900 px-4 py-4 text-white">
         <div className="flex justify-between gap-2 text-xs text-stone-300">
           <span>{label(unitStatusLabel, view.status)}</span>
-          <span>{worker ? `${worker.name} さんが作業中` : "作業する人が未選択"}</span>
+          <span>{viewer.user.name} さんが作業中</span>
         </div>
         <p className="font-mono text-3xl font-medium tracking-wide">{view.mgmtNo}</p>
         <p className="text-sm text-stone-300">
@@ -71,24 +74,18 @@ async function AssemblyUnit({
         </p>
       )}
 
-      {!worker ? (
-        <p className="rounded-md bg-amber-100 px-4 py-3 text-amber-950">
-          作業する人が選ばれていません。
-          <Link href="/assembly" className="font-bold underline">
-            組立のトップ
-          </Link>
-          で名前を選んでください。
-        </p>
-      ) : view.canScan ? (
+      {view.canScan ? (
         <ScanConsole mgmtNo={view.mgmtNo} complete={view.nextSlot === null} />
       ) : view.status === "inspecting" ? (
         <div role="status" className="flex flex-col gap-2 rounded-md bg-green-100 px-4 py-4 text-green-950">
           <p className="text-lg font-bold">✓ 組立が完了しました。検品に回してください。</p>
           <p className="text-sm">
             部品の付け外しは、ここではもうできません。
-            <Link href={`/trace/${view.mgmtNo}`} className="ml-1 font-bold underline">
-              個体の履歴を見る
-            </Link>
+            {canTrace && (
+              <Link href={`/trace/${view.mgmtNo}`} className="ml-1 font-bold underline">
+                個体の履歴を見る
+              </Link>
+            )}
           </p>
           <Link
             href="/assembly"
@@ -100,9 +97,11 @@ async function AssemblyUnit({
       ) : (
         <p className="rounded-md bg-stone-200 px-4 py-3 text-stone-900">
           この個体は「{label(unitStatusLabel, view.status)}」です。組立画面では部品を付け外しできません。
-          <Link href={`/trace/${view.mgmtNo}`} className="ml-1 font-bold underline">
-            個体の履歴を見る
-          </Link>
+          {canTrace && (
+            <Link href={`/trace/${view.mgmtNo}`} className="ml-1 font-bold underline">
+              個体の履歴を見る
+            </Link>
+          )}
         </p>
       )}
 

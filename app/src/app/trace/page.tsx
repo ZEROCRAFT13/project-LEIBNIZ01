@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { SearchForm } from "@/components/trace/search-form";
 import type { Metadata } from "next";
 import { Card, Tag } from "@/components/ui";
+import { requireUser } from "@/lib/auth/session";
 import { label, unitStatusLabel } from "@/lib/labels";
 import { searchUnits, type SearchHit } from "@/lib/trace";
 
@@ -29,6 +30,7 @@ export default function TraceSearchPage({ searchParams }: PageProps<"/trace">) {
 async function SearchSection({ searchParams }: { searchParams: PageProps<"/trace">["searchParams"] }) {
   const { q } = await searchParams;
   const text = typeof q === "string" ? q : "";
+  await requireUser(text ? `/trace?q=${encodeURIComponent(text)}` : "/trace");
 
   if (text.trim() === "") {
     return (

@@ -33,6 +33,7 @@ Amazon.co.jp（FBA）を主軸にPCを月100台組立・販売する会社の基
 DBやテストを変えたら `npm run db:test`、アプリのコードを変えたら `npm test`・`npm run build`・`npm run lint` が通ることを確かめてから報告する。
 
 アプリからDBへは `app/src/lib/db.ts` を使う。読み取りは `query()`、書き込みは必ず `withActor()` の中で行う（ルール7）。
+ログインの確認は `app/src/lib/auth/session.ts` の `requireUser()`・`requireAssembler()`・`requireManager()` を、画面ではデータを読む前に、Server Action では最初に呼ぶ（`proxy.ts` は Cookie の有無を見るだけで、守りにはならない）。
 
 ## 必ず守るルール
 

@@ -118,13 +118,15 @@ function appUrl(db) {
   return `postgres://${user}@${host}:${port}/${db}`;
 }
 
-// app/.env.local の DATABASE_URL だけを書き換える（ほかの行は残す）
+// app/.env.local の DATABASE_URL を書き換える（ほかの行は残す）。ZB_DEV_LOGIN がなければ足す
 function writeAppEnv(db) {
   const file = join(root, 'app', '.env.local');
   const line = `DATABASE_URL=${appUrl(db)}`;
   const lines = existsSync(file)
     ? readFileSync(file, 'utf8').split(/\r?\n/).filter((l) => l && !l.startsWith('DATABASE_URL='))
     : ['# 開発用。npm run db:reset / db:seed が DATABASE_URL を書き換える（git に入らない）'];
+  // 開発用ログイン（Google の設定なしで画面を確かめる）。止めたいときは ZB_DEV_LOGIN=0 に書き換える
+  if (!lines.some((l) => l.startsWith('ZB_DEV_LOGIN='))) lines.push('ZB_DEV_LOGIN=1');
   writeFileSync(file, [...lines, line, ''].join('\n'));
   console.log(`→ app/.env.local の DATABASE_URL を ${db} に向けました`);
 }

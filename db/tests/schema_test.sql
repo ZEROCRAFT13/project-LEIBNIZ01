@@ -1,6 +1,6 @@
 -- =====================================================================
--- 0001_init.sql / 0002_roles.sql の動作確認
--- 空のデータベースに2つを流したあと、管理者（postgres）で実行する。
+-- db/migrations のすべてを流したあとの動作確認
+-- 空のデータベースにマイグレーションを番号順に流したあと、管理者（postgres）で実行する。
 -- 失敗するはずの操作は expect_error で包み、本当に止まることを確かめる。
 -- 最後に「ALL TESTS PASSED」と出れば成功。
 -- =====================================================================
@@ -261,6 +261,70 @@ SELECT pg_temp.expect_error($$SELECT * FROM audit.log$$, 'アプリ本体が監�
 SELECT pg_temp.expect_error(
   $$INSERT INTO audit.log (actor_kind, table_name, action) VALUES ('user', 'x', 'INSERT')$$,
   'アプリ本体が監査ログに直接書く');
+RESET ROLE;
+
+-- ---------- ログイン（0004_auth） ----------
+SET ROLE zb_app;
+SELECT set_config('app.actor_kind', 'user', false), set_config('app.actor_user_id', '1', false);
+
+-- バイトはメールアドレスなしで登録できる。代表・社員はメールが必要で、小文字にそろえる
+INSERT INTO core.users (display_name, kind) VALUES ('鈴木（バイト）', 'part_time');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.users (display_name, kind) VALUES ('社員A', 'staff')$$,
+  'メールアドレスなしで社員を登録');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.users (email, display_name, kind) VALUES ('Staff@Example.jp', '社員B', 'staff')$$,
+  '大文字まじりのメールアドレスで登録');
+
+-- 組立端末: 登録前は鍵がなく、登録したら登録コードを消す
+INSERT INTO auth.devices (name, enroll_code_hash, enroll_expires_at, registered_by)
+VALUES ('組立台1', '\x01', now() + interval '10 minutes', 1);
+SELECT pg_temp.expect_error(
+  $$INSERT INTO auth.devices (name, token_hash, registered_by) VALUES ('鍵だけ', '\x02', 1)$$,
+  '登録日なしで端末の鍵を入れる');
+UPDATE auth.devices SET token_hash = '\x03', enrolled_at = now(),
+                        enroll_code_hash = NULL, enroll_expires_at = NULL WHERE id = 1;
+
+-- PIN とセッション
+INSERT INTO auth.worker_pins (user_id, pin_hash, set_by) VALUES (2, 'scrypt$16384$8$1$c2FsdA$aGFzaA', 1);
+SELECT pg_temp.expect_error(
+  $$INSERT INTO auth.worker_pins (user_id, pin_hash, set_by) VALUES (3, '1234', 1)$$,
+  'PINをハッシュにせずに保存');
+INSERT INTO auth.sessions (token_hash, kind, user_id, device_id, expires_at)
+VALUES ('\x10', 'worker', 2, 1, now() + interval '12 hours'),
+       ('\x11', 'user', 1, NULL, now() + interval '7 days');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO auth.sessions (token_hash, kind, user_id, expires_at) VALUES ('\x12', 'worker', 2, now() + interval '1 hour')$$,
+  '端末なしで組立担当のセッションを作る');
+SELECT pg_temp.expect_error($$DELETE FROM auth.sessions$$, 'アプリ本体がセッションを削除');
+SELECT pg_temp.expect_error($$DELETE FROM auth.devices$$, 'アプリ本体が端末を削除');
+
+-- ログインの記録は追記だけ
+INSERT INTO auth.login_events (event, user_id, device_id) VALUES ('pin_login', 2, 1);
+SELECT pg_temp.expect_error($$UPDATE auth.login_events SET event = 'logout'$$, 'ログインの記録を書き換え');
+SELECT pg_temp.expect_error($$DELETE FROM auth.login_events$$, 'ログインの記録を削除');
+RESET ROLE;
+SELECT pg_temp.expect_error($$UPDATE auth.login_events SET detail = 'x'$$, '管理者でもログインの記録を書き換え');
+
+SELECT pg_temp.check(
+  (SELECT before IS NULL AND after IS NULL AND 'pin_hash' = ANY(changed_columns) AND actor_user_id = 1
+     FROM audit.log WHERE table_name = 'auth.worker_pins' LIMIT 1),
+  'PINの設定は、誰がやったかを残し、ハッシュの値は監査ログに残さない');
+SELECT pg_temp.check(
+  (SELECT count(*) = 0 FROM audit.log
+    WHERE table_name LIKE 'auth.%' AND (before IS NOT NULL OR after IS NOT NULL)),
+  'ログインの表は、監査ログに値を残さない');
+SELECT pg_temp.check(
+  (SELECT after ? 'kind' FROM audit.log WHERE table_name = 'core.users' ORDER BY id DESC LIMIT 1),
+  '業務データの表は、これまでどおり監査ログに値を残す');
+
+SET ROLE zb_auditor;
+SELECT pg_temp.check((SELECT count(*) = 1 FROM auth.login_events), '監査用はログインの記録を読める');
+SELECT pg_temp.expect_error($$SELECT token_hash FROM auth.devices$$, '監査用が端末の鍵を読む');
+SELECT pg_temp.expect_error($$SELECT * FROM auth.sessions$$, '監査用がセッションを読む');
+RESET ROLE;
+SET ROLE zb_pii;
+SELECT pg_temp.expect_error($$SELECT * FROM auth.sessions$$, '個人情報の窓口がセッションを読む');
 RESET ROLE;
 
 \echo ALL TESTS PASSED

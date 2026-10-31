@@ -4,9 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   finishAssembly,
   getAssembly,
-  getWorker,
   listInProgress,
-  listWorkers,
   scanPart,
   startUnit,
   undoLast,
@@ -37,14 +35,6 @@ describe("読み取った文字をそろえる", () => {
   it("日本語入力がオンのまま読んで全角になっても戻る", () => {
     expect(normalizeCode("ｐｓ８５－２３０２")).toBe("PS85-2302");
     expect(normalizeCode(" 9mp4c0501\n")).toBe("9MP4C0501");
-  });
-});
-
-describe("組立をしてよい人", () => {
-  it("組立担当と工場長の役割を持つ人だけ", async () => {
-    const workers = await listWorkers();
-    expect(workers.map((w) => w.name)).toEqual(["代表", "佐藤（バイト）", "高橋（バイト）"]);
-    expect(await getWorker(9999)).toBeNull();
   });
 });
 

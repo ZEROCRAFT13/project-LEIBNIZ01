@@ -23,8 +23,52 @@ npm run dev          # http://localhost:3000 で画面が開く
 
 画面の例（ダミーデータ）
 
+- ログイン：http://localhost:3000 を開くとログイン画面になる。開発中は「代表 としてログイン」（開発用ログイン）で入れる
 - 個体トレース：http://localhost:3000/trace/ZB-2609-0118
-- 組立：http://localhost:3000/assembly → 名前を選び、`ZB-2610-0045` を開いて `PS85-2301` と `KEY-ZZ9P` を入力すると組立が完了する
+- 組立：組立台の端末を登録してから、名前とPINで入る（下の「組立用の端末を試す」）。代表のままでも http://localhost:3000/assembly から使える。`ZB-2610-0045` を開いて `PS85-2301` と `KEY-ZZ9P` を入力すると組立が完了する
+
+## ログインのしくみ
+
+| 人 | 入り方 | 使える画面 |
+| --- | --- | --- |
+| 代表・社員 | 会社の Google アカウント（Workspace）。2段階認証は Workspace の管理画面で必須にする | 役割に合わせて全部 |
+| バイト | 代表が登録した組立用の端末で、名前を押して4桁のPIN。メールアドレスは作らない | 組立だけ（12時間で自動ログアウト） |
+
+- 組立用の端末の登録：代表が自分のPCで「設定 → 組立用の端末」で登録コード（8桁・10分有効）を出し、組立台の端末で `/login/device` を開いて入れる。共用の端末で代表が Google にログインする必要はない
+- PINを5回続けて間違えるとロック。「設定 → バイトとPIN」で解除・決め直し・バイトの追加・辞めた人の停止ができる
+- 端末をなくしたら「設定 → 組立用の端末」で無効にする。その端末のログインはすべて切れる
+
+### 組立用の端末を試す（開発中）
+
+1. PCのブラウザで「代表 としてログイン」→「設定 → 組立用の端末」→ 名前を付けて「登録コードを出す」
+2. 別のブラウザ（またはシークレットウィンドウ）で http://localhost:3000/login/device を開き、コードを入れる
+3. 名前を押してPINを入れる。ダミーのPINは **佐藤 = 1357、高橋 = 2468**
+
+同じWi-Fiのスマホから試すときは、PCのIPアドレス（例 `http://192.168.1.10:3000`）で開く。
+
+### ログインの準備（Google、最初に1回）
+
+開発用ログイン（`app/.env.local` の `ZB_DEV_LOGIN=1`。`npm run db:seed` が書き込む）は `npm run dev` のときだけ動き、本番のビルドでは出ません。本物の Google ログインを使うには:
+
+1. Google Cloud コンソールでプロジェクトを選び、「APIとサービス → OAuth 同意画面」を **内部（Internal）** で作る（会社の Workspace の人しか使えなくなる）
+2. 「認証情報 → 認証情報を作成 → OAuth クライアント ID」で、種類は **ウェブ アプリケーション**、承認済みのリダイレクト URI に `http://localhost:3000/auth/callback` を入れる（本番を作るときは本番のURLも足す）
+3. 出てきたクライアント ID とシークレットを `app/.env.local` に書く（見本は `app/.env.example`。git には入らない）
+
+   ```
+   GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=xxxx
+   AUTH_ALLOWED_DOMAIN=会社のドメイン（例 zerobit.co.jp）
+   APP_URL=http://localhost:3000
+   ```
+4. 自分のアカウントを登録する（ダミーの代表のメールを自分のものに替える）
+
+   ```sh
+   npm run db:psql
+   UPDATE core.users SET email = 'あなた@会社のドメイン' WHERE email = 'owner@zerobit.example';
+   ```
+   `npm run db:seed` をやり直すとダミーに戻るので、そのときはもう一度実行する
+5. Google Workspace の管理コンソールで、2段階認証プロセスを「適用」にする
+6. `npm run dev` を起動し直して「Googleでログイン」
 
 ## よく使うコマンド
 

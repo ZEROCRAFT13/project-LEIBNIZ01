@@ -8,7 +8,10 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | --- | --- |
 | `migrations/0001_init.sql` | 表・制約・トリガー・ビュー（フェーズ0〜1の範囲） |
 | `migrations/0002_roles.sql` | DBの利用者（`zb_app`・`zb_pii`・`zb_auditor`）と権限 |
-| `tests/schema_test.sql` | 動作確認（38項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `migrations/0003_tokyo_dates.sql` | 日付を日本時間で数える |
+| `migrations/0004_auth.sql` | ログイン（`auth` 区画）。バイトはメールアドレスなしで登録できる |
+| `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
+| `tests/schema_test.sql` | 動作確認（57項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 3つの区画
 
@@ -17,6 +20,7 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `core` | 業務データ。顧客は番号だけを持つ | アプリ本体（`zb_app`） |
 | `pii` | 顧客の氏名・住所・電話・メール・LINE ID、メッセージ本文。暗号化して保存 | 個人情報の窓口（`zb_pii`）だけ |
 | `audit` | 監査ログ。追記のみで、管理者でも書き換え・削除できない | 監査用（`zb_auditor`）だけ |
+| `auth` | ログイン。セッション・組立用の端末・PIN（どれもハッシュだけ）、ログインの記録（追記のみ） | アプリ本体（消せない）。監査用はログインの記録だけ |
 
 ## 表の地図
 
@@ -34,6 +38,7 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 - **タスク**: `tasks`, `task_events`（追記のみ）, `approvals`
 - **AI**: `prompts`（版つき）, `ai_calls`（呼び出し記録）, `ai_jobs`（ローカルLLMが取りに来る仕事）
 - **設定**: `settings`（FBAリードタイムなど）
+- **ログイン**（`auth`）: `sessions`, `devices`（組立用の端末）, `worker_pins`, `login_events`（追記のみ）
 
 ## データベースが自動で止めること
 

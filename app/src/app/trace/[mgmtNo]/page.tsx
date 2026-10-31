@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
+import { requireUser } from "@/lib/auth/session";
 import { SearchForm } from "@/components/trace/search-form";
 import { Card, Loading, Tag } from "@/components/ui";
 import { ymd, ymdHm, yen } from "@/lib/format";
@@ -41,6 +42,7 @@ export default function UnitTracePage({ params }: PageProps<"/trace/[mgmtNo]">) 
 
 async function UnitTraceView({ params }: { params: PageProps<"/trace/[mgmtNo]">["params"] }) {
   const { mgmtNo } = await params;
+  await requireUser(`/trace/${mgmtNo}`);
   const trace = await getUnitTrace(decodeURIComponent(mgmtNo));
   if (!trace) notFound();
 
