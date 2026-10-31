@@ -25,6 +25,8 @@ const ENROLL_FAILS_PER_10MIN = 20; // 登録コードの総当たりを止める
 export const ASSEMBLY_ROLES = ["assembler", "factory_manager"];
 /** 組立端末とバイトのPINを管理できる役割 */
 export const MANAGER_ROLES = ["ceo", "factory_manager"];
+/** 仕入れと入荷を登録できる役割 */
+export const PURCHASE_ROLES = ["ceo", "factory_manager"];
 
 export type Viewer = {
   sessionId: number;
