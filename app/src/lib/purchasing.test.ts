@@ -4,14 +4,17 @@ import { getPool, query } from "@/lib/db";
 import { parsePurchaseInput } from "@/lib/purchase-calc";
 import {
   PurchaseError,
+  addShipment,
   cancelReceipt,
   createPurchase,
+  findArrival,
   getPurchase,
   listPartModels,
   listPurchases,
   listSuppliers,
   receiveBulk,
   receiveSerial,
+  removeShipment,
 } from "@/lib/purchasing";
 
 let owner: number;
@@ -217,5 +220,72 @@ describe("入荷する", () => {
     const line = (await getPurchase(id))!.lines[0];
     const r = await receiveSerial(owner, line.id, "2000000000022", "C-01");
     expect(r).toMatchObject({ ok: false, message: expect.stringContaining("JANコード") });
+  });
+});
+
+describe("発送（輸送中）と、届いた荷物から仕入れを探す", () => {
+  let shipId: number;
+
+  beforeAll(async () => {
+    const parsed = parsePurchaseInput(
+      {
+        supplierId: String(dospara),
+        orderNo: "EC0000000001",
+        orderedOn: "2026-10-31",
+        paymentMethod: "card",
+        tax: "",
+        lines: [{ partModelId: String(ssd), description: "", qty: "2", unitPrice: "12980" }],
+      },
+      "2026-11-01",
+    );
+    if (!parsed.ok) throw new Error(parsed.errors.join());
+    shipId = await createPurchase(owner, parsed.value);
+  });
+
+  it("発送を登録すると「輸送中」になる。追跡番号はハイフンなしでそろえる", async () => {
+    expect(await addShipment(owner, shipId, "yamato", "4444-5555-6666", "2026-11-02")).toEqual({
+      ok: true,
+      message: "追跡番号 444455556666 を登録しました。",
+    });
+    const p = (await getPurchase(shipId))!;
+    expect(p.status).toBe("in_transit");
+    expect(p.shipments).toEqual([
+      { id: expect.any(Number), carrier: "yamato", trackingNo: "444455556666", expectedOn: "2026-11-02", deliveredAt: null },
+    ]);
+  });
+
+  it("2個口目も登録できる。同じ追跡番号は二重に登録しない。おかしな入力は断る", async () => {
+    expect(await addShipment(owner, shipId, "yamato", "444455556667", null)).toMatchObject({ ok: true });
+    expect(await addShipment(owner, shipId, "yamato", "444455556666", null)).toMatchObject({ ok: false });
+    expect(await addShipment(owner, shipId, "pigeon", "444455556668", null)).toMatchObject({ ok: false });
+    expect(await addShipment(owner, shipId, "yamato", "12", null)).toMatchObject({ ok: false });
+    expect(await addShipment(owner, shipId, "yamato", "444455556669", "明日")).toMatchObject({ ok: false });
+    expect((await getPurchase(shipId))!.shipments).toHaveLength(2);
+  });
+
+  it("送り状のバーコードを読むと、その仕入れが見つかり、荷物は「届いた」になる", async () => {
+    const r = await findArrival(owner, "a444455556666a");
+    expect(r).toEqual({ kind: "shipment", purchaseId: shipId, shipmentId: expect.any(Number) });
+    const s = (await getPurchase(shipId))!.shipments.find((x) => x.trackingNo === "444455556666");
+    expect(s?.deliveredAt).toBeInstanceOf(Date);
+    // 2個口目はまだ輸送中
+    expect((await getPurchase(shipId))!.shipments.find((x) => x.trackingNo === "444455556667")?.deliveredAt).toBeNull();
+  });
+
+  it("仕入先の注文番号でも探せる。見つからなければ none", async () => {
+    expect(await findArrival(owner, "ec0000000001")).toEqual({ kind: "order", purchaseId: shipId });
+    expect(await findArrival(owner, "999999999999")).toEqual({ kind: "none" });
+    expect(await findArrival(owner, "  ")).toEqual({ kind: "none" });
+  });
+
+  it("入荷すると「一部入荷」→「入荷済み」になり、発送を消しても入荷の状態は変わらない", async () => {
+    const line = (await getPurchase(shipId))!.lines[0];
+    await receiveSerial(owner, line.id, "S6Z-SHIP-1", "");
+    expect((await getPurchase(shipId))!.status).toBe("partially_received");
+    await receiveSerial(owner, line.id, "S6Z-SHIP-2", "");
+    expect((await getPurchase(shipId))!.status).toBe("received");
+    const s = (await getPurchase(shipId))!.shipments[1];
+    expect(await removeShipment(owner, s.id)).toMatchObject({ ok: true });
+    expect((await getPurchase(shipId))!.status).toBe("received");
   });
 });

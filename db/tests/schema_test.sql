@@ -371,4 +371,38 @@ DELETE FROM core.part_items WHERE serial_no = 'RCV-001';
 SELECT pg_temp.check((SELECT status = 'cancelled' FROM rcv), '取り消した仕入れの状態は自動で変わらない');
 RESET ROLE;
 
+-- ---------- 発送・輸送中（0006_purchase_shipments） ----------
+SET ROLE zb_app;
+INSERT INTO core.purchases (supplier_id, supplier_order_no, ordered_on, total_amount, tax_amount, payment_method)
+VALUES (1, 'SO-SHIP', '2026-10-25', 52800, 4800, 'card');
+INSERT INTO core.purchase_lines (purchase_id, part_model_id, description, qty, unit_price, unit_tax)
+SELECT id, 1, 'Ryzen 7 9700X', 1, 52800, 4800 FROM core.purchases WHERE supplier_order_no = 'SO-SHIP';
+CREATE TEMP VIEW shp AS
+  SELECT p.id AS purchase_id, p.status, l.id AS line_id
+    FROM core.purchases p JOIN core.purchase_lines l ON l.purchase_id = p.id
+   WHERE p.supplier_order_no = 'SO-SHIP';
+SELECT pg_temp.check((SELECT status = 'ordered' FROM shp), '発送前は「注文済み」');
+
+INSERT INTO core.purchase_shipments (purchase_id, carrier, tracking_no)
+SELECT purchase_id, 'yamato', '123456789012' FROM shp;
+SELECT pg_temp.check((SELECT status = 'in_transit' FROM shp), '発送を登録すると「輸送中」');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.purchase_shipments (purchase_id, carrier, tracking_no) SELECT purchase_id, 'yamato', '123456789012' FROM shp$$,
+  '同じ運送会社の同じ追跡番号を二重に登録');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.purchase_shipments (purchase_id, carrier, tracking_no) SELECT purchase_id, 'sagawa', '1234-5678-9012' FROM shp$$,
+  'ハイフンつきの追跡番号をそのまま保存');
+
+INSERT INTO core.part_items (part_model_id, purchase_line_id, serial_no, cost_excl_tax, cost_tax)
+SELECT 1, line_id, 'SHIP-001', 48000, 4800 FROM shp;
+SELECT pg_temp.check((SELECT status = 'received' FROM shp), '輸送中でも、全部入荷すれば「入荷済み」');
+DELETE FROM core.part_items WHERE serial_no = 'SHIP-001';
+SELECT pg_temp.check((SELECT status = 'in_transit' FROM shp), '入荷を取り消すと「輸送中」に戻る');
+DELETE FROM core.purchase_shipments WHERE tracking_no = '123456789012';
+SELECT pg_temp.check((SELECT status = 'ordered' FROM shp), '発送を消すと「注文済み」に戻る');
+RESET ROLE;
+SET ROLE zb_auditor;
+SELECT pg_temp.check((SELECT count(*) >= 0 FROM core.purchase_shipments), '監査用は発送を読める');
+RESET ROLE;
+
 \echo ALL TESTS PASSED

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ReceiveLine } from "@/components/purchases/receive-line";
+import { ShipmentPanel } from "@/components/purchases/shipment-panel";
 import { Card, Loading, Tag } from "@/components/ui";
 import { requirePurchaser } from "@/lib/auth/session";
 import { yen, ymd } from "@/lib/format";
@@ -31,12 +32,13 @@ async function Purchase({
   params: PageProps<"/purchases/[id]">["params"];
   searchParams: PageProps<"/purchases/[id]">["searchParams"];
 }) {
-  const [{ id }, { new: isNew }] = await Promise.all([params, searchParams]);
+  const [{ id }, { new: isNew, arrived }] = await Promise.all([params, searchParams]);
   await requirePurchaser(`/purchases/${encodeURIComponent(id)}`);
   const purchase = /^\d{1,15}$/.test(id) ? await getPurchase(Number(id)) : null;
   if (!purchase) notFound();
 
   const open = purchase.status !== "cancelled";
+  const arrivedShipment = purchase.shipments.find((s) => String(s.id) === arrived);
   const firstOpen = purchase.lines.find((l) => l.model && l.items.length < l.qty && l.model.serialRequired);
 
   return (
@@ -44,7 +46,17 @@ async function Purchase({
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold">{purchase.supplier}</h1>
-          <Tag tone={purchase.status === "received" ? "green" : purchase.status === "cancelled" ? "gray" : "amber"}>
+          <Tag
+            tone={
+              purchase.status === "received"
+                ? "green"
+                : purchase.status === "cancelled"
+                  ? "gray"
+                  : purchase.status === "ordered"
+                    ? "amber"
+                    : "blue"
+            }
+          >
             {label(purchaseStatusLabel, purchase.status)}
           </Tag>
         </div>
@@ -75,6 +87,21 @@ async function Purchase({
           仕入れを登録しました。部品が届いたら、この画面で箱のシリアルを読んで入荷してください。
         </p>
       )}
+
+      {arrivedShipment && (
+        <p role="status" className="rounded-md bg-green-100 px-4 py-3 text-green-950">
+          追跡番号 <span className="font-mono font-bold">{arrivedShipment.trackingNo}</span> の荷物が届きました。箱のシリアルを読んで入荷してください。
+        </p>
+      )}
+
+      <Card title="発送" aside={purchase.shipments.length > 0 ? `${purchase.shipments.length}個口` : undefined}>
+        <ShipmentPanel
+          purchaseId={purchase.id}
+          shipments={purchase.shipments}
+          canAdd={open && purchase.status !== "received"}
+          arrivedId={arrivedShipment?.id ?? null}
+        />
+      </Card>
 
       {purchase.lines.map((line) => (
         <LineCard

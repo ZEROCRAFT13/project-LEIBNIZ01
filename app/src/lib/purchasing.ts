@@ -2,7 +2,14 @@ import "server-only";
 import { DatabaseError } from "pg";
 import { normalizeCode } from "@/lib/codes";
 import { query, withActor } from "@/lib/db";
-import { normalizeBoxLocation, splitTax10, type PurchaseInput } from "@/lib/purchase-calc";
+import {
+  CARRIERS,
+  isTrackingNo,
+  normalizeBoxLocation,
+  normalizeTracking,
+  splitTax10,
+  type PurchaseInput,
+} from "@/lib/purchase-calc";
 
 // 仕入れの登録と入荷。書き込みはすべて withActor の中で行う。
 // actorId は、呼ぶ側（app/purchases/actions.ts）が requirePurchaser でログインから決めたものを渡す。
@@ -108,7 +115,7 @@ export async function listPurchases(limit = 100): Promise<PurchaseRow[]> {
             (SELECT coalesce(sum(l.qty), 0) FROM core.purchase_lines l
               WHERE l.purchase_id = p.id AND l.part_model_id IS NOT NULL)::int AS expected
        FROM core.purchases p JOIN core.suppliers s ON s.id = p.supplier_id
-      ORDER BY p.status IN ('ordered', 'partially_received') DESC, p.ordered_on DESC, p.id DESC
+      ORDER BY p.status IN ('ordered', 'in_transit', 'partially_received') DESC, p.ordered_on DESC, p.id DESC
       LIMIT $1`,
     [limit],
   );
@@ -142,6 +149,15 @@ export type PurchaseView = {
   paymentMethod: string;
   status: string;
   lines: PurchaseLineView[];
+  shipments: Shipment[];
+};
+
+export type Shipment = {
+  id: number;
+  carrier: string;
+  trackingNo: string;
+  expectedOn: string | null;
+  deliveredAt: Date | null;
 };
 
 export async function getPurchase(id: number): Promise<PurchaseView | null> {
@@ -173,8 +189,14 @@ export async function getPurchase(id: number): Promise<PurchaseView | null> {
       ORDER BY i.id`,
     [id],
   );
+  const shipments = await query<Shipment>(
+    `SELECT id, carrier, tracking_no AS "trackingNo", expected_on AS "expectedOn", delivered_at AS "deliveredAt"
+       FROM core.purchase_shipments WHERE purchase_id = $1 ORDER BY id`,
+    [id],
+  );
   return {
     ...p,
+    shipments,
     lines: lines.map((l) => ({
       ...l,
       items: items
@@ -314,4 +336,98 @@ export async function cancelReceipt(actorId: number, itemId: number): Promise<Re
     }
     throw error;
   }
+}
+
+// ---------------------------------------------------------------------
+// 発送（輸送中）と、届いた荷物から仕入れを探す
+// ---------------------------------------------------------------------
+
+export type ShipmentResult = { ok: true; message: string } | { ok: false; message: string };
+
+/** 発送のお知らせが来たら、運送会社と追跡番号を登録する（仕入れは「輸送中」になる） */
+export async function addShipment(
+  actorId: number,
+  purchaseId: number,
+  carrier: string,
+  rawTrackingNo: string,
+  expectedOn: string | null,
+): Promise<ShipmentResult> {
+  if (!CARRIERS.some((c) => c === carrier)) return { ok: false, message: "運送会社を選んでください。" };
+  const trackingNo = normalizeTracking(rawTrackingNo);
+  if (!isTrackingNo(trackingNo)) return { ok: false, message: "追跡番号を確かめてください（数字と英字で6〜30文字）。" };
+  if (expectedOn !== null && !/^\d{4}-\d{2}-\d{2}$/.test(expectedOn)) {
+    return { ok: false, message: "到着予定日を正しく入れてください。" };
+  }
+  try {
+    const r = await withActor({ kind: "user", userId: actorId }, (client) =>
+      client.query(
+        `INSERT INTO core.purchase_shipments (purchase_id, carrier, tracking_no, expected_on)
+         SELECT id, $2, $3, $4 FROM core.purchases WHERE id = $1 AND status <> 'cancelled'`,
+        [purchaseId, carrier, trackingNo, expectedOn],
+      ),
+    );
+    if (r.rowCount !== 1) return { ok: false, message: "この仕入れには発送を登録できません。" };
+  } catch (error) {
+    if (error instanceof DatabaseError && error.code === "23505") {
+      return { ok: false, message: `追跡番号 ${trackingNo} は、もう登録されています。` };
+    }
+    throw error;
+  }
+  return { ok: true, message: `追跡番号 ${trackingNo} を登録しました。` };
+}
+
+/** 間違えて登録した発送を消す */
+export async function removeShipment(actorId: number, shipmentId: number): Promise<ShipmentResult> {
+  if (!Number.isSafeInteger(shipmentId) || shipmentId <= 0) return { ok: false, message: "その発送はありません。" };
+  const r = await withActor({ kind: "user", userId: actorId }, (client) =>
+    client.query<{ tracking_no: string }>(
+      `DELETE FROM core.purchase_shipments WHERE id = $1 RETURNING tracking_no`,
+      [shipmentId],
+    ),
+  );
+  if (r.rowCount !== 1) return { ok: false, message: "その発送はありません。" };
+  return { ok: true, message: `追跡番号 ${r.rows[0].tracking_no} の登録を消しました。` };
+}
+
+export type ArrivalLookup =
+  | { kind: "shipment"; purchaseId: number; shipmentId: number }
+  | { kind: "order"; purchaseId: number }
+  | { kind: "many"; purchaseIds: number[] }
+  | { kind: "none" };
+
+/**
+ * 届いた荷物の送り状のバーコード（追跡番号）か、仕入先の注文番号から仕入れを探す。
+ * 追跡番号で見つかったら、その荷物を「届いた」にする。
+ */
+export async function findArrival(actorId: number, raw: string): Promise<ArrivalLookup> {
+  const tracking = normalizeTracking(raw);
+  if (isTrackingNo(tracking)) {
+    const hits = await query<{ id: number; purchase_id: number }>(
+      `SELECT sh.id, sh.purchase_id FROM core.purchase_shipments sh
+         JOIN core.purchases p ON p.id = sh.purchase_id AND p.status <> 'cancelled'
+        WHERE sh.tracking_no = $1`,
+      [tracking],
+    );
+    if (hits.length === 1) {
+      await withActor({ kind: "user", userId: actorId }, (client) =>
+        client.query(`UPDATE core.purchase_shipments SET delivered_at = now() WHERE id = $1 AND delivered_at IS NULL`, [
+          hits[0].id,
+        ]),
+      );
+      return { kind: "shipment", purchaseId: hits[0].purchase_id, shipmentId: hits[0].id };
+    }
+    if (hits.length > 1) return { kind: "many", purchaseIds: [...new Set(hits.map((h) => h.purchase_id))] };
+  }
+
+  const orderNo = raw.normalize("NFKC").trim();
+  if (orderNo === "") return { kind: "none" };
+  const orders = await query<{ id: number }>(
+    `SELECT id FROM core.purchases
+      WHERE status <> 'cancelled' AND upper(supplier_order_no) = upper($1)
+      ORDER BY id DESC LIMIT 5`,
+    [orderNo],
+  );
+  if (orders.length === 1) return { kind: "order", purchaseId: orders[0].id };
+  if (orders.length > 1) return { kind: "many", purchaseIds: orders.map((o) => o.id) };
+  return { kind: "none" };
 }
