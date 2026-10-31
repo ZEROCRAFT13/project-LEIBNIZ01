@@ -27,6 +27,8 @@ export const ASSEMBLY_ROLES = ["assembler", "factory_manager"];
 export const MANAGER_ROLES = ["ceo", "factory_manager"];
 /** 仕入れと入荷を登録できる役割 */
 export const PURCHASE_ROLES = ["ceo", "factory_manager"];
+/** 書類（領収書・保証書など）を取り込み・整理できる役割 */
+export const DOCUMENT_ROLES = ["ceo", "admin_lead", "factory_manager"];
 
 export type Viewer = {
   sessionId: number;

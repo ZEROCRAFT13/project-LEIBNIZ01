@@ -111,6 +111,28 @@ export const partCategoryLabel: Record<string, string> = {
   other: "その他",
 };
 
+export const documentKindLabel: Record<string, string> = {
+  receipt: "領収書",
+  invoice: "請求書",
+  delivery_note: "納品書",
+  warranty_card: "保証書",
+  quote: "見積書",
+  setup_guide: "説明書",
+  photo: "写真",
+  rma_form: "RMA申請書",
+  filing: "届出・申告",
+  contract: "契約書",
+  other: "その他",
+};
+
+export const documentSourceLabel: Record<string, string> = {
+  email: "メール",
+  upload: "アップロード",
+  generated: "システムが作成",
+  scan: "スキャン",
+  folder: "取り込みフォルダ",
+};
+
 export function label(map: Record<string, string>, code: string | null | undefined): string {
   if (code == null) return "—";
   return map[code] ?? code;

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { Loading } from "@/components/ui";
-import { canAssemble, canManage, canPurchase, requireUser } from "@/lib/auth/session";
+import { canAssemble, canDocuments, canManage, canPurchase, requireUser } from "@/lib/auth/session";
 
 // 仮のトップページ。ホーム（コントロールパネル）はフェーズ1の最後に作る
 export default function Home({ searchParams }: PageProps<"/">) {
@@ -29,6 +29,15 @@ async function Menu({ searchParams }: { searchParams: PageProps<"/">["searchPara
             href: "/purchases",
             title: "仕入れ・入荷",
             text: "ショップで買った部品を登録し、届いたら箱のシリアルを読んで在庫に入れる（元箱の棚番も記録）",
+          },
+        ]
+      : []),
+    ...(canDocuments(viewer)
+      ? [
+          {
+            href: "/documents",
+            title: "書類",
+            text: "領収書・保証書・納品書を取り込みフォルダやアップロードから集め、仕入れにひもづけて保管する",
           },
         ]
       : []),

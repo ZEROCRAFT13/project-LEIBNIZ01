@@ -16,7 +16,7 @@
 // （接続先は PGHOST / PGPORT / PGUSER / PGPASSWORD で指定）。
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -127,6 +127,10 @@ function writeAppEnv(db) {
     : ['# 開発用。npm run db:reset / db:seed が DATABASE_URL を書き換える（git に入らない）'];
   // 開発用ログイン（Google の設定なしで画面を確かめる）。止めたいときは ZB_DEV_LOGIN=0 に書き換える
   if (!lines.some((l) => l.startsWith('ZB_DEV_LOGIN='))) lines.push('ZB_DEV_LOGIN=1');
+  // 書類の保存先と、共有の取り込みフォルダ（開発中はこのPCのフォルダ。どちらも git に入らない）
+  if (!lines.some((l) => l.startsWith('ZB_STORAGE_DIR='))) lines.push(`ZB_STORAGE_DIR=${join(root, '.zerobit', 'documents')}`);
+  if (!lines.some((l) => l.startsWith('ZB_INBOX_DIR='))) lines.push(`ZB_INBOX_DIR=${join(root, 'inbox')}`);
+  mkdirSync(join(root, 'inbox'), { recursive: true });
   writeFileSync(file, [...lines, line, ''].join('\n'));
   console.log(`→ app/.env.local の DATABASE_URL を ${db} に向けました`);
 }
