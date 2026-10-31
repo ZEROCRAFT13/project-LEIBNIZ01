@@ -1,5 +1,5 @@
 import "server-only";
-import { DatabaseError } from "pg";
+import { DatabaseError, type PoolClient } from "pg";
 import { normalizeCode } from "@/lib/codes";
 import { query, withActor } from "@/lib/db";
 import {
@@ -49,48 +49,55 @@ export class PurchaseError extends Error {
   }
 }
 
+/** 仕入れと明細を書き込む（呼ぶ側のトランザクションの中で）。下書きの確定からも使う */
+export async function insertPurchase(client: PoolClient, input: PurchaseInput): Promise<number> {
+  const models = await client.query<{ id: number; name: string }>(
+    `SELECT id, name FROM core.part_models WHERE active AND id = ANY($1)`,
+    [input.lines.flatMap((l) => (l.partModelId ? [l.partModelId] : []))],
+  );
+  const modelName = new Map(models.rows.map((m) => [m.id, m.name]));
+  const supplier = await client.query(`SELECT 1 FROM core.suppliers WHERE id = $1`, [input.supplierId]);
+  if (supplier.rowCount !== 1) throw new PurchaseError("その仕入先はありません。");
+
+  const p = await client.query<{ id: number }>(
+    `INSERT INTO core.purchases (supplier_id, supplier_order_no, ordered_on, total_amount, tax_amount, payment_method)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [input.supplierId, input.orderNo, input.orderedOn, input.total, input.tax, input.paymentMethod],
+  );
+  const purchaseId = p.rows[0].id;
+
+  for (const [i, line] of input.lines.entries()) {
+    if (line.partModelId !== null && !modelName.has(line.partModelId)) {
+      throw new PurchaseError(`${i + 1}行目：その部品は選べません。`);
+    }
+    const description = line.description || (line.partModelId !== null ? (modelName.get(line.partModelId) ?? "") : "");
+    await client.query(
+      `INSERT INTO core.purchase_lines (purchase_id, part_model_id, description, qty, unit_price, unit_tax)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [purchaseId, line.partModelId, description, line.qty, line.unitPrice, splitTax10(line.unitPrice).tax],
+    );
+  }
+  return purchaseId;
+}
+
+/** 同じ仕入先・同じ注文番号の二重登録を、分かる言葉にする */
+export async function duplicatePurchaseError(error: unknown, input: PurchaseInput): Promise<PurchaseError | null> {
+  if (error instanceof DatabaseError && error.code === "23505" && error.constraint?.startsWith("purchases_")) {
+    const [dup] = await query<{ id: number }>(
+      `SELECT id FROM core.purchases WHERE supplier_id = $1 AND supplier_order_no = $2`,
+      [input.supplierId, input.orderNo],
+    );
+    return new PurchaseError("この仕入先の同じ注文番号は、もう登録されています。", dup?.id);
+  }
+  return null;
+}
+
 /** 仕入れを登録する（まだ入荷はしない）。登録した仕入れの番号を返す */
 export async function createPurchase(actorId: number, input: PurchaseInput): Promise<number> {
   try {
-    return await withActor({ kind: "user", userId: actorId }, async (client) => {
-      const models = await client.query<{ id: number; name: string }>(
-        `SELECT id, name FROM core.part_models WHERE active AND id = ANY($1)`,
-        [input.lines.flatMap((l) => (l.partModelId ? [l.partModelId] : []))],
-      );
-      const modelName = new Map(models.rows.map((m) => [m.id, m.name]));
-      const supplier = await client.query(`SELECT 1 FROM core.suppliers WHERE id = $1`, [input.supplierId]);
-      if (supplier.rowCount !== 1) throw new PurchaseError("その仕入先はありません。");
-
-      const p = await client.query<{ id: number }>(
-        `INSERT INTO core.purchases (supplier_id, supplier_order_no, ordered_on, total_amount, tax_amount, payment_method)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [input.supplierId, input.orderNo, input.orderedOn, input.total, input.tax, input.paymentMethod],
-      );
-      const purchaseId = p.rows[0].id;
-
-      for (const [i, line] of input.lines.entries()) {
-        if (line.partModelId !== null && !modelName.has(line.partModelId)) {
-          throw new PurchaseError(`${i + 1}行目：その部品は選べません。`);
-        }
-        const description =
-          line.description || (line.partModelId !== null ? (modelName.get(line.partModelId) ?? "") : "");
-        await client.query(
-          `INSERT INTO core.purchase_lines (purchase_id, part_model_id, description, qty, unit_price, unit_tax)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [purchaseId, line.partModelId, description, line.qty, line.unitPrice, splitTax10(line.unitPrice).tax],
-        );
-      }
-      return purchaseId;
-    });
+    return await withActor({ kind: "user", userId: actorId }, (client) => insertPurchase(client, input));
   } catch (error) {
-    if (error instanceof DatabaseError && error.code === "23505" && error.constraint?.startsWith("purchases_")) {
-      const [dup] = await query<{ id: number }>(
-        `SELECT id FROM core.purchases WHERE supplier_id = $1 AND supplier_order_no = $2`,
-        [input.supplierId, input.orderNo],
-      );
-      throw new PurchaseError("この仕入先の同じ注文番号は、もう登録されています。", dup?.id);
-    }
-    throw error;
+    throw (await duplicatePurchaseError(error, input)) ?? error;
   }
 }
 

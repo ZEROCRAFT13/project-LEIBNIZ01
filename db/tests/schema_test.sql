@@ -440,4 +440,29 @@ SELECT pg_temp.check(
   (SELECT count(*) = 2 FROM audit.log WHERE table_name = 'core.document_links'),
   '書類のひもづけの付け外しが監査ログに残る');
 
+-- ---------- 仕入れの下書き（0008_purchase_drafts） ----------
+SET ROLE zb_app;
+INSERT INTO core.purchase_drafts (source, parser, supplier_id, supplier_order_no, lines)
+VALUES ('paste', 'dospara', 1, 'EC0000000099', '[]');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.purchase_drafts (source, parser, supplier_order_no, lines) VALUES ('paste', 'dospara', 'EC0000000099', '[]')$$,
+  '同じ注文の下書きを二重に作る');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.purchase_drafts SET status = 'confirmed' WHERE supplier_order_no = 'EC0000000099'$$,
+  '仕入れなしで下書きを確定にする');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.purchase_drafts (source, parser, lines) VALUES ('paste', 'dospara', '{}')$$,
+  '明細が配列でない下書き');
+UPDATE core.purchase_drafts SET status = 'discarded' WHERE supplier_order_no = 'EC0000000099';
+INSERT INTO core.purchase_drafts (source, parser, supplier_order_no, lines) VALUES ('paste', 'dospara', 'EC0000000099', '[]');
+SELECT pg_temp.check((SELECT count(*) = 2 FROM core.purchase_drafts WHERE supplier_order_no = 'EC0000000099'),
+  '捨てた下書きと同じ注文なら、作り直せる');
+SELECT pg_temp.expect_error($$DELETE FROM core.purchase_drafts$$, 'アプリ本体が下書きを削除（捨てるだけ）');
+
+INSERT INTO core.supplier_item_aliases (supplier_id, item_key, part_model_id) VALUES (1, 'ryzen 7 9700x box', 1);
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.supplier_item_aliases (supplier_id, item_key, part_model_id) VALUES (1, 'ryzen 7 9700x box', 2)$$,
+  '同じショップの同じ商品名に、型番を2つ対応させる');
+RESET ROLE;
+
 \echo ALL TESTS PASSED

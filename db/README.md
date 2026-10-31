@@ -13,8 +13,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0005_receiving.sql` | 入荷。仕入れの数より多く入荷できない・型番違いを止める。仕入れの状態を自動で決める |
 | `migrations/0006_purchase_shipments.sql` | 仕入れの発送（運送会社・追跡番号、何個口でも）。発送があれば「輸送中」 |
 | `migrations/0007_document_intake.sql` | 書類の取り込み。同じファイルを二重に入れない、ファイルは変えられず消せない、領収書は日付・取引先・金額がそろうまで要確認 |
+| `migrations/0008_purchase_drafts.sql` | 仕入れの下書き（メールから読み取った項目だけ。本文は残さない）と、ショップの商品名と型番の対応 |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（83項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（89項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 3つの区画
 
@@ -29,7 +30,7 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 
 - **人と役割**: `users`, `roles`, `role_assignments`（いつから誰がその役割か）
 - **部品とSKU**: `part_models`（型番）, `skus`, `sku_slots`（構成の枠）, `sku_slot_options`（枠に使ってよい型番）
-- **仕入れ**: `suppliers`, `purchases`, `purchase_lines`, `purchase_shipments`（発送・追跡番号）
+- **仕入れ**: `suppliers`, `purchases`, `purchase_lines`, `purchase_shipments`（発送・追跡番号）, `purchase_drafts`（メールから作る下書き）, `supplier_item_aliases`（ショップの商品名→型番）
 - **在庫**: `part_items`（部品1個ずつ）, `units`（個体＝管理番号）, `unit_parts`（個体に入っている部品と交換履歴）, `inspections`, `asset_transfers`（区分の振替）
 - **FBA**: `fba_shipments`, `fba_shipment_units`, `fba_inventory_snapshots`
 - **販売**: `customers`, `orders`, `order_lines`, `order_units`（注文と個体の紐づけ）, `product_registrations`（QRの製品登録）
