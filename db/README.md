@@ -14,8 +14,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0006_purchase_shipments.sql` | 仕入れの発送（運送会社・追跡番号、何個口でも）。発送があれば「輸送中」 |
 | `migrations/0007_document_intake.sql` | 書類の取り込み。同じファイルを二重に入れない、ファイルは変えられず消せない、領収書は日付・取引先・金額がそろうまで要確認 |
 | `migrations/0008_purchase_drafts.sql` | 仕入れの下書き（メールから読み取った項目だけ。本文は残さない）と、ショップの商品名と型番の対応 |
+| `migrations/0009_purchase_draft_tax.sql` | 下書きに「うち消費税」（メールに書いてあればその額を使う） |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（89項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（90項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 3つの区画
 

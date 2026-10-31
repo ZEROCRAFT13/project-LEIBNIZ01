@@ -13,6 +13,8 @@ export type ParsedLine = {
   lineTotal: number;
   /** item = 商品、fee = 送料・手数料など */
   kind: "item" | "fee";
+  /** 型番の対応を覚える鍵（ショップの商品番号など。なければ商品名を使う） */
+  key?: string;
 };
 
 export type ParsedOrder = {
@@ -23,6 +25,8 @@ export type ParsedOrder = {
   orderedOn: string | null;
   paymentMethod: PaymentMethod | null;
   total: number | null;
+  /** メールに書いてある「うち消費税」（なければ null。確定のときに合計から計算する） */
+  tax: number | null;
   lines: ParsedLine[];
   issues: string[];
 };
@@ -52,6 +56,9 @@ function check(order: ParsedOrder): ParsedOrder {
   if (order.total === null) issues.push("合計金額が読み取れませんでした。");
   else if (sum !== order.total) {
     issues.push(`明細の合計（${sum.toLocaleString()}円）がメールの合計（${order.total.toLocaleString()}円）と合いません。値引きやポイントの行がないか確かめてください。`);
+  }
+  if (order.tax !== null && order.total !== null && order.tax > order.total) {
+    issues.push("うち消費税が合計より大きくなっています。");
   }
   return { ...order, issues };
 }
@@ -109,7 +116,18 @@ function parseDospara(text: string): ParsedOrder | null {
       lines.push({ description: m[1], qty: 1, unitPrice: amount, lineTotal: amount, kind: "fee" });
     }
   }
-  const t = text.match(/税込金額[^\d\n]{0,20}([\d,]+)\s*円/);
+  // 税込金額。印刷やコピーで行が崩れて金額が前後の行に移ることがあるので、そのときは隣の行も見る
+  let t = text.match(/税込金額[^\d\n]{0,20}([\d,]+)\s*円/);
+  if (!t) {
+    const at = rows.findIndex((r) => r.startsWith("税込金額"));
+    for (const r of at >= 0 ? [rows[at - 1], rows[at + 1]] : []) {
+      const near = r?.match(/([\d,]+)\s*円(?!.*円)/);
+      if (near) {
+        t = near;
+        break;
+      }
+    }
+  }
 
   return check({
     parser: "dospara",
@@ -118,19 +136,171 @@ function parseDospara(text: string): ParsedOrder | null {
     orderedOn,
     paymentMethod: paymentFrom(payment),
     total: t ? yenNum(t[1]) : null,
+    tax: null,
     lines,
     issues: [],
   });
 }
 
-const PARSERS = [parseDospara];
+// ---------------------------------------------------------------------
+// Joshin web（「[Joshin web] ご注文承りました」）
+//   ■ご注文内容
+//   ご注文日:2026年 01月 18日
+//   商品番号:0000000000000
+//   商品名:○○○
+//   型番:ABC-123
+//   数量:8 / 単価:¥14,980 / 金額:¥119,840
+//   配送料:¥0
+//   合計 ¥ : 119,840
+//   うち消費税 ¥ :( 10,894)
+//   ■お支払い方法
+//   クレジットカード
+//   ご注文番号:【66447416】
+// ---------------------------------------------------------------------
+function parseJoshin(text: string): ParsedOrder | null {
+  if (!/Joshin/i.test(text) || !/■ご注文内容/.test(text)) return null;
+
+  const orderNo = text.match(/ご注文番号\s*:\s*【?\s*(\d{5,15})\s*】?/)?.[1] ?? text.match(/お問い合わせ番号\s*:\s*(\d{5,15})/)?.[1] ?? null;
+  const d = text.match(/ご注文日\s*:\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  const orderedOn = d ? `${d[1]}-${d[2].padStart(2, "0")}-${d[3].padStart(2, "0")}` : null;
+  const payment = text.match(/(?:^|\n)\s*■?\s*お支払い?方法\s*\n\s*([^\n]+)/)?.[1] ?? "";
+
+  // 商品は「商品番号」または「商品名」から次の商品までのまとまり
+  const lines: ParsedLine[] = [];
+  const rows = text.split("\n").map((r) => r.trim());
+  let cur: { no?: string; name?: string; model?: string; qty?: number; unit?: number; amount?: number } | null = null;
+  const flush = () => {
+    if (cur?.name && cur.qty && cur.amount !== undefined) {
+      lines.push({
+        description: cur.model ? `${cur.name}（型番 ${cur.model}）` : cur.name,
+        qty: cur.qty,
+        unitPrice: cur.unit ?? null,
+        lineTotal: cur.amount,
+        kind: "item",
+        key: cur.no ? `joshin:${cur.no}` : undefined,
+      });
+    }
+    cur = null;
+  };
+  for (const r of rows) {
+    let m: RegExpMatchArray | null;
+    if ((m = r.match(/商品番号\s*:\s*(\S+)/))) {
+      flush();
+      cur = { no: m[1] };
+    } else if ((m = r.match(/^商品名\s*:\s*(.+)$/))) {
+      if (cur?.name) flush();
+      cur = { ...(cur ?? {}), name: m[1].trim() };
+    } else if (cur && (m = r.match(/^型番\s*:\s*(\S+)/))) cur.model = m[1];
+    else if (cur && (m = r.match(/^数量\s*:\s*(\d+)/))) cur.qty = Number(m[1]);
+    else if (cur && (m = r.match(/^単価\s*:\s*¥?\s*([\d,]+)/))) cur.unit = yenNum(m[1]);
+    else if (cur && (m = r.match(/^金額\s*:\s*¥?\s*([\d,]+)/))) {
+      cur.amount = yenNum(m[1]);
+      flush();
+    } else if (/商品小計/.test(r)) flush();
+  }
+  flush();
+
+  for (const m of text.matchAll(/(配送料|送料|代引き?手数料)\s*:\s*¥?\s*([\d,]+)/g)) {
+    const amount = yenNum(m[2]);
+    if (amount > 0) lines.push({ description: m[1], qty: 1, unitPrice: amount, lineTotal: amount, kind: "fee" });
+  }
+
+  const tax = text.match(/うち消費税\s*¥?\s*:?\s*\(?\s*¥?\s*([\d,]+)/)?.[1];
+  const issues: string[] = [];
+  const points = text.match(/ポイント・割引クーポンでの\s*\n?\s*お支払い計\s*:\s*¥?\s*([\d,]+)/)?.[1];
+  // 合計。行が崩れて読めなければ「今回お支払い予定金額」＋ポイントの分を使う
+  const payNow = text.match(/予定金額\s*:\s*¥?\s*([\d,]+)/)?.[1];
+  const totalText = text.match(/(?:^|\n)\s*合計\s*¥?\s*:?\s*¥?\s*([\d,]+)/)?.[1];
+  const total = totalText
+    ? yenNum(totalText)
+    : payNow
+      ? yenNum(payNow) + (points ? yenNum(points) : 0)
+      : null;
+  if (points && yenNum(points) > 0) {
+    issues.push(`ポイント・クーポンを ${yenNum(points).toLocaleString()}円 使っています。仕入れの金額の扱いを確かめてください。`);
+  }
+
+  return check({
+    parser: "joshin",
+    supplierName: "Joshin",
+    orderNo,
+    orderedOn,
+    paymentMethod: paymentFrom(payment),
+    total,
+    tax: tax ? yenNum(tax) : null,
+    lines,
+    issues,
+  });
+}
+
+// ---------------------------------------------------------------------
+// Amazon.co.jp（「注文済み: 「○○」N点…」）
+//   注文番号 249-0000000-0000000
+//   商品名（途中で「...」と切れている）
+//   数量: 5
+//   ¥33,657          ← 1個あたりの単価
+//   合計 ¥237,879
+// 商品名が途中までなので、似た商品を取りちがえないよう、確定のときに型番を確かめてもらう。
+// 注文日は本文にないので、Gmail の受信日（あれば）を使う。
+// ---------------------------------------------------------------------
+function parseAmazon(text: string): ParsedOrder | null {
+  if (!/amazon\.co\.jp/i.test(text) || !/注文番号/.test(text)) return null;
+
+  const orderNo = text.match(/注文番号\s*[:#]?\s*(\d{3}-\d{7}-\d{7})/)?.[1] ?? null;
+  const d = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  const orderedOn = d ? `${d[1]}-${d[2].padStart(2, "0")}-${d[3].padStart(2, "0")}` : null;
+
+  const rows = text.split("\n").map((r) => r.trim()).filter((r) => r !== "");
+  const lines: ParsedLine[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const q = rows[i].match(/^数量\s*:\s*(\d+)$/);
+    if (!q) continue;
+    // 商品名は「数量」の前の行。表示のしかたで、名前の続きが「数量」と単価の間に入ることがある
+    let name = rows[i - 1] ?? "";
+    let price: RegExpMatchArray | null = null;
+    for (let j = i + 1; j < Math.min(rows.length, i + 4); j++) {
+      price = rows[j].match(/^¥\s*([\d,]+)$/);
+      if (price) break;
+      name = `${name} ${rows[j]}`;
+    }
+    if (!name || !price) continue;
+    const qty = Number(q[1]);
+    const unit = yenNum(price[1]);
+    lines.push({ description: name.replace(/\s+/g, " "), qty, unitPrice: unit, lineTotal: unit * qty, kind: "item" });
+  }
+  const total = text.match(/(?:^|\n)\s*(?:ご請求額|注文の合計|合計)\s*:?\s*¥\s*([\d,]+)/)?.[1];
+
+  const issues: string[] = [];
+  if (lines.some((l) => /(\.\.\.|…)$/.test(l.description))) {
+    issues.push("Amazon のメールは商品名が途中までしか書かれていません。容量ちがいなど似た商品を取りちがえないよう、型番をよく確かめてください。");
+  }
+  if (orderedOn) issues.push("注文日はメールの日付から入れました。ちがっていたら直してください。");
+
+  return check({
+    parser: "amazon",
+    supplierName: "Amazon",
+    orderNo,
+    orderedOn,
+    paymentMethod: null,
+    total: total ? yenNum(total) : null,
+    tax: null,
+    lines,
+    issues,
+  });
+}
+
+const PARSERS = [parseDospara, parseJoshin, parseAmazon];
 
 /** 対応しているショップの一覧（画面の説明用） */
-export const SUPPORTED_SHOPS = ["ドスパラ"];
+export const SUPPORTED_SHOPS = ["ドスパラ", "Joshin web", "Amazon.co.jp"];
 
 /** 注文確認メールの本文を読む。対応していないショップなら null */
 export function parseOrderMail(raw: string): ParsedOrder | null {
-  const text = raw.normalize("NFKC").replace(/\r\n?/g, "\n");
+  // 右から左の向きを指定する見えない文字（Amazon のメールに入っている）も取る
+  const text = raw
+    .normalize("NFKC")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, "");
   for (const parse of PARSERS) {
     const r = parse(text);
     if (r) return r;

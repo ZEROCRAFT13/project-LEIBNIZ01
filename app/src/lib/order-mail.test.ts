@@ -1,6 +1,6 @@
 // 注文確認メールの読み取り（金額の検算もふくむ。お金の計算なのでテストする: ルール10）
 import { describe, expect, it } from "vitest";
-import { dosparaMail } from "@/test/mail-fixtures";
+import { amazonMail, dosparaMail, joshinMail } from "@/test/mail-fixtures";
 import { itemKey, parseOrderMail, splitLineTotal } from "./order-mail";
 
 describe("ドスパラの「ご注文確定のお知らせ」", () => {
@@ -13,6 +13,7 @@ describe("ドスパラの「ご注文確定のお知らせ」", () => {
       orderedOn: "2026-10-30",
       paymentMethod: "card",
       total: 88900,
+      tax: null,
       lines: [
         { description: "メーカーC B850 ATX (B850 AM5 ATX)", unitPrice: 24980, qty: 2, lineTotal: 49960, kind: "item" },
         { description: "メーカーS NV4-1TB (NVMe Gen4 1TB)", unitPrice: 12980, qty: 3, lineTotal: 38940, kind: "item" },
@@ -64,7 +65,7 @@ describe("ドスパラの「ご注文確定のお知らせ」", () => {
   });
 
   it("ほかのショップのメールは読まない", () => {
-    expect(parseOrderMail("Amazon.co.jp ご注文の確認 注文番号 249-0000000-0000000")).toBeNull();
+    expect(parseOrderMail("ヨドバシ ご注文の確認 注文番号 0000000000")).toBeNull();
     expect(parseOrderMail("")).toBeNull();
   });
 });
@@ -102,5 +103,119 @@ describe("金額を数量で割り切れないとき", () => {
     expect(() => splitLineTotal(100, 0)).toThrow();
     expect(() => splitLineTotal(-1, 1)).toThrow();
     expect(() => splitLineTotal(1.5, 1)).toThrow();
+  });
+});
+
+describe("Joshin web の「ご注文承りました」", () => {
+  it("注文番号・注文日・支払い方法・明細（型番つき）・合計・うち消費税を読み取る", () => {
+    const r = parseOrderMail(joshinMail({}));
+    expect(r).toEqual({
+      parser: "joshin",
+      supplierName: "Joshin",
+      orderNo: "66000001",
+      orderedOn: "2026-01-18",
+      paymentMethod: "card",
+      total: 49960,
+      tax: 4542,
+      lines: [
+        {
+          description: "メーカーC B850 ATX マザーボード【国内正規品】（型番 B850-ATX）",
+          qty: 2,
+          unitPrice: 24980,
+          lineTotal: 49960,
+          kind: "item",
+          key: "joshin:4500000000001",
+        },
+      ],
+      issues: [],
+    });
+  });
+
+  it("商品が複数・送料ありでも合計が合う", () => {
+    const r = parseOrderMail(
+      joshinMail({
+        items: [
+          { no: "4500000000001", name: "マザーボード A", model: "MB-A", unit: 24980, qty: 2 },
+          { no: "4500000000002", name: "SSD B", model: "SSD-B", unit: 12980, qty: 1 },
+        ],
+        shipping: 550,
+      }),
+    );
+    expect(r?.lines.map((l) => [l.kind, l.qty, l.lineTotal, l.key])).toEqual([
+      ["item", 2, 49960, "joshin:4500000000001"],
+      ["item", 1, 12980, "joshin:4500000000002"],
+      ["fee", 1, 550, undefined],
+    ]);
+    expect(r?.total).toBe(63490);
+    expect(r?.issues).toEqual([]);
+  });
+
+  it("ポイント・クーポンを使っていたら、気になる点に出す", () => {
+    expect(parseOrderMail(joshinMail({ points: 1000 }))?.issues).toEqual([
+      "ポイント・クーポンを 1,000円 使っています。仕入れの金額の扱いを確かめてください。",
+    ]);
+  });
+
+  it("宛名は読み取った項目に入らない", () => {
+    expect(JSON.stringify(parseOrderMail(joshinMail({})))).not.toContain("見本");
+  });
+});
+
+describe("Amazon.co.jp の「注文済み」", () => {
+  it("注文番号・数量・単価・合計を読み取る（金額は1個あたりの単価）。見えない向きの文字は取る", () => {
+    const r = parseOrderMail(amazonMail({}));
+    expect(r).toMatchObject({
+      parser: "amazon",
+      supplierName: "Amazon",
+      orderNo: "249-0000001-0000001",
+      orderedOn: "2026-02-23",
+      paymentMethod: null,
+      total: 82900,
+      tax: null,
+      lines: [
+        { description: "メーカーM DDR5-5600 32GB デスクトップPC用 メモ...", qty: 2, unitPrice: 21980, lineTotal: 43960, kind: "item" },
+        { description: "メーカーS NVMe SSD 1TB Gen4 Internal SSD -...", qty: 3, unitPrice: 12980, lineTotal: 38940, kind: "item" },
+      ],
+    });
+  });
+
+  it("商品名が途中で切れていることと、注文日をメールの日付から入れたことを知らせる", () => {
+    expect(parseOrderMail(amazonMail({}))?.issues).toEqual([
+      "Amazon のメールは商品名が途中までしか書かれていません。容量ちがいなど似た商品を取りちがえないよう、型番をよく確かめてください。",
+      "注文日はメールの日付から入れました。ちがっていたら直してください。",
+    ]);
+  });
+
+  it("本文だけを貼った（日付がない）ときは、注文日が読めないと知らせる", () => {
+    const r = parseOrderMail(amazonMail({ date: false }));
+    expect(r?.orderedOn).toBeNull();
+    expect(r?.issues).toContain("注文日が読み取れませんでした。");
+  });
+
+  it("おすすめ商品の値段（セール商品）は明細に入れない。宛名も入れない", () => {
+    const r = parseOrderMail(amazonMail({}));
+    expect(r?.lines).toHaveLength(2);
+    expect(JSON.stringify(r)).not.toContain("見本");
+  });
+});
+
+describe("印刷やコピーで行が崩れたメール", () => {
+  it("ドスパラ：税込金額の数字が前の行にずれていても読む", () => {
+    const text = dosparaMail({}).replace("-------------------------------------------\r\n税込金額：       88,900円", "-----------返信88,900円 転送\r\n税込金額：");
+    expect(parseOrderMail(text)).toMatchObject({ total: 88900, issues: [] });
+  });
+
+  it("Amazon：商品名の続きが「数量」の下にずれていても読む", () => {
+    const text = amazonMail({}).replace("メーカーM DDR5-5600 32GB デスクトップPC用 メモ...\n数量: 2", "メーカーM DDR5-5600 32GB\n数量: 2\nデスクトップPC用 メモ...");
+    expect(parseOrderMail(text)?.lines[0]).toMatchObject({
+      description: "メーカーM DDR5-5600 32GB デスクトップPC用 メモ...",
+      qty: 2,
+      unitPrice: 21980,
+    });
+  });
+
+  it("Joshin：合計の行が崩れていたら「今回お支払い予定金額」から合計を出す", () => {
+    const text = joshinMail({}).replace("   合計 ￥  : 49,960", "合計 ￥") + "\n今回お支払い\n予定金額:￥49,960\nうち消費税:(￥4,542)";
+    expect(parseOrderMail(text)).toMatchObject({ total: 49960, issues: [] });
   });
 });

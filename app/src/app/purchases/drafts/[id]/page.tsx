@@ -68,6 +68,10 @@ async function Draft({ params }: { params: PageProps<"/purchases/drafts/[id]">["
           明細の合計 <span className="font-mono">{yen(sum)}</span>
           {draft.total !== null && sum === draft.total && <span className="ml-1 text-green-800">✓ 一致</span>}
         </span>
+        <span>
+          うち消費税{" "}
+          <span className="font-mono">{draft.tax !== null ? `${yen(draft.tax)}（メールの額）` : "合計から計算"}</span>
+        </span>
       </p>
 
       {draft.status === "open" && (
