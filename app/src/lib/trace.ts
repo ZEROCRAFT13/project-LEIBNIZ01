@@ -1,4 +1,5 @@
 import "server-only";
+import { normalizeSearch } from "@/lib/codes";
 import { query } from "@/lib/db";
 import { todayJst } from "@/lib/format";
 
@@ -6,19 +7,8 @@ import { todayJst } from "@/lib/format";
 // 検索
 // ---------------------------------------------------------------------
 
-/**
- * 入力をそろえる。全角→半角、小文字→大文字、いろいろなハイフン→「-」。
- * 「2609-0118」や「ZB26090118」は「ZB-2609-0118」にする。
- */
-export function normalizeQuery(raw: string): string {
-  let q = raw.normalize("NFKC").trim().toUpperCase();
-  q = q.replace(/[‐‑‒–—―ー−]/g, "-").replace(/\s+/g, "");
-  let m = q.match(/^(?:ZB-?)?(\d{4})-?(\d{4})$/);
-  if (m && (q.startsWith("ZB") || q.includes("-"))) return `ZB-${m[1]}-${m[2]}`;
-  m = q.match(/^ZB(\d{4})(\d{4})$/);
-  if (m) return `ZB-${m[1]}-${m[2]}`;
-  return q;
-}
+/** 検索欄の入力をそろえる（中身は lib/codes.ts） */
+export const normalizeQuery = normalizeSearch;
 
 export type SearchHit = {
   mgmtNo: string;

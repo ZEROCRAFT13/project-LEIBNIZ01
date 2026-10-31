@@ -17,6 +17,17 @@ export default function Home() {
             </span>
           </Link>
         </li>
+        <li>
+          <Link
+            href="/assembly"
+            className="flex flex-col gap-1 rounded-lg border border-stone-300 bg-white p-5 hover:border-blue-700"
+          >
+            <span className="font-bold">組立</span>
+            <span className="text-sm text-stone-600">
+              管理番号を発行し、部品のバーコードを読んで取り付けを記録する（組立担当のスマホ・タブレット用）
+            </span>
+          </Link>
+        </li>
       </ul>
     </main>
   );
