@@ -57,7 +57,13 @@ export function PurchaseForm({ suppliers, models, today }: { suppliers: Supplier
       <section className="grid gap-4 rounded-lg border border-stone-300 bg-white p-5 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm font-medium">
           仕入先
-          <select name="supplierId" required value={head.supplierId} onChange={(e) => setH({ supplierId: e.target.value })} className={inputClass}>
+          <select
+            name="supplierId"
+            required
+            value={head.supplierId}
+            onChange={(e) => setH({ supplierId: e.target.value })}
+            className={inputClass}
+          >
             <option value="" disabled>
               選んでください
             </option>
@@ -70,15 +76,36 @@ export function PurchaseForm({ suppliers, models, today }: { suppliers: Supplier
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           仕入先の注文番号（あれば）
-          <input name="orderNo" maxLength={60} autoComplete="off" value={head.orderNo} onChange={(e) => setH({ orderNo: e.target.value })} className={`${inputClass} font-mono`} />
+          <input
+            name="orderNo"
+            maxLength={60}
+            autoComplete="off"
+            value={head.orderNo}
+            onChange={(e) => setH({ orderNo: e.target.value })}
+            className={`${inputClass} font-mono`}
+          />
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           注文日
-          <input name="orderedOn" type="date" required max={today} value={head.orderedOn} onChange={(e) => setH({ orderedOn: e.target.value })} className={inputClass} />
+          <input
+            name="orderedOn"
+            type="date"
+            required
+            max={today}
+            value={head.orderedOn}
+            onChange={(e) => setH({ orderedOn: e.target.value })}
+            className={inputClass}
+          />
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           支払い方法
-          <select name="paymentMethod" required value={head.paymentMethod} onChange={(e) => setH({ paymentMethod: e.target.value })} className={inputClass}>
+          <select
+            name="paymentMethod"
+            required
+            value={head.paymentMethod}
+            onChange={(e) => setH({ paymentMethod: e.target.value })}
+            className={inputClass}
+          >
             {PAYMENT_METHODS.map((m) => (
               <option key={m} value={m}>
                 {paymentMethodLabel[m]}
@@ -90,9 +117,23 @@ export function PurchaseForm({ suppliers, models, today }: { suppliers: Supplier
 
       <section className="flex flex-col gap-3 rounded-lg border border-stone-300 bg-white p-5">
         <h2 className="font-bold">明細（単価は税込）</h2>
+        <p className="text-xs text-stone-600">
+          一覧にない部品・仕入先は{" "}
+          <a href="/settings/parts/new" target="_blank" rel="noopener" className="text-blue-800 underline">
+            型番を追加
+          </a>
+          ・
+          <a href="/settings/suppliers/new" target="_blank" rel="noopener" className="text-blue-800 underline">
+            仕入先を追加
+          </a>
+          （別のタブで開きます。追加したら、この画面を読み込み直してください）
+        </p>
         <ol className="flex flex-col gap-3">
           {lines.map((l, i) => (
-            <li key={l.key} className="grid gap-2 border-b border-stone-100 pb-3 last:border-0 sm:grid-cols-[1fr_5rem_8rem_auto]">
+            <li
+              key={l.key}
+              className="grid gap-2 border-b border-stone-100 pb-3 last:border-0 sm:grid-cols-[1fr_5rem_8rem_auto]"
+            >
               <div className="flex flex-col gap-2">
                 <label className="sr-only" htmlFor={`model-${l.key}`}>
                   {i + 1}行目の部品
@@ -161,7 +202,11 @@ export function PurchaseForm({ suppliers, models, today }: { suppliers: Supplier
           ))}
         </ol>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => addLine()} className="h-10 rounded-md border border-stone-400 px-4 text-sm">
+          <button
+            type="button"
+            onClick={() => addLine()}
+            className="h-10 rounded-md border border-stone-400 px-4 text-sm"
+          >
             ＋ 部品の行を足す
           </button>
           <button
@@ -183,7 +228,14 @@ export function PurchaseForm({ suppliers, models, today }: { suppliers: Supplier
           <span>
             うち消費税（領収書に書いてある額。空なら <span className="font-mono">{yen(tax)}</span> で登録）
           </span>
-          <input name="tax" inputMode="numeric" placeholder={String(tax)} value={head.tax} onChange={(e) => setH({ tax: e.target.value })} className={`${inputClass} w-36 text-right font-mono`} />
+          <input
+            name="tax"
+            inputMode="numeric"
+            placeholder={String(tax)}
+            value={head.tax}
+            onChange={(e) => setH({ tax: e.target.value })}
+            className={`${inputClass} w-36 text-right font-mono`}
+          />
         </label>
       </section>
 
@@ -200,7 +252,11 @@ export function PurchaseForm({ suppliers, models, today }: { suppliers: Supplier
         </div>
       )}
 
-      <button type="submit" disabled={pending} className="h-14 rounded-md bg-blue-800 text-lg font-bold text-white disabled:opacity-60">
+      <button
+        type="submit"
+        disabled={pending}
+        className="h-14 rounded-md bg-blue-800 text-lg font-bold text-white disabled:opacity-60"
+      >
         {pending ? "登録中…" : "仕入れを登録する（入荷は次の画面で）"}
       </button>
     </form>
