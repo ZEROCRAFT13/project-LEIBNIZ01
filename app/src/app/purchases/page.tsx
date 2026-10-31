@@ -6,6 +6,7 @@ import { Card, Loading, Tag } from "@/components/ui";
 import { requirePurchaser } from "@/lib/auth/session";
 import { yen, ymd } from "@/lib/format";
 import { label, purchaseStatusLabel } from "@/lib/labels";
+import { countOpenDrafts } from "@/lib/purchase-drafts";
 import { listPurchases, type PurchaseRow } from "@/lib/purchasing";
 
 export const metadata: Metadata = { title: "仕入れ | ZERO-BIT" };
@@ -39,11 +40,25 @@ const statusTone = {
 
 async function PurchaseList() {
   await requirePurchaser("/purchases");
-  const rows = await listPurchases();
+  const [rows, drafts] = await Promise.all([listPurchases(), countOpenDrafts()]);
   const waiting = rows.filter((r) => ["ordered", "in_transit", "partially_received"].includes(r.status));
 
   return (
     <>
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <span>
+            <span className="font-bold">メールから仕入れの下書き</span>
+            <span className="ml-2 text-sm text-stone-600">注文確認メールを貼り付けると、明細を読み取ります</span>
+          </span>
+          <Link
+            href="/purchases/drafts"
+            className="flex h-11 items-center gap-2 rounded-md border border-blue-800 px-4 font-bold text-blue-800"
+          >
+            下書き{drafts > 0 && <Tag tone="amber">確定待ち {drafts}</Tag>}
+          </Link>
+        </div>
+      </Card>
       <Card>
         <div className="p-5">
           <ArrivalScan />
