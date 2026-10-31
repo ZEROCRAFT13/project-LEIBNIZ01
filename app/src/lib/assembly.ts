@@ -1,6 +1,6 @@
 import "server-only";
 import type { PoolClient } from "pg";
-import { isMgmtNo, normalizeCode } from "@/lib/codes";
+import { isMgmtNo, mgmtNoFromLabel, normalizeCode } from "@/lib/codes";
 import { query, withActor } from "@/lib/db";
 import { slotLabel } from "@/lib/labels";
 
@@ -198,7 +198,8 @@ const statusText: Record<string, string> = {
  */
 export async function scanPart(workerId: number, rawMgmtNo: string, rawCode: string): Promise<ScanResult> {
   const mgmtNo = normalizeCode(rawMgmtNo);
-  const code = normalizeCode(rawCode);
+  // 管理番号シールの QR（製品登録の URL）を読んだときは、管理番号として扱う
+  const code = mgmtNoFromLabel(rawCode) ?? normalizeCode(rawCode);
   if (code === "") return { kind: "error", message: "読み取れませんでした。もう一度読んでください。" };
 
   // 別の管理番号のシールを読んだら、その個体の組立画面へ移る

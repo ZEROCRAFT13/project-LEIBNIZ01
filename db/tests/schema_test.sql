@@ -536,4 +536,16 @@ SELECT pg_temp.check(
   (SELECT count(*) = 2 FROM audit.log WHERE table_name = 'core.unit_notes'),
   'メモの追加と取り消しが監査ログに残る');
 
+-- ---------- 管理番号シール（0012_label_printed） ----------
+SET ROLE zb_app;
+SELECT pg_temp.check(
+  (SELECT count(*) > 0 FROM core.units WHERE label_printed_at IS NULL),
+  '発行したばかりの個体は、シールを刷っていない');
+UPDATE core.units SET label_printed_at = now() WHERE id = 1;
+RESET ROLE;
+SELECT pg_temp.check(
+  (SELECT 'label_printed_at' = ANY(changed_columns) FROM audit.log
+    WHERE table_name = 'core.units' AND action = 'UPDATE' ORDER BY id DESC LIMIT 1),
+  'シールを刷った記録が監査ログに残る');
+
 \echo ALL TESTS PASSED

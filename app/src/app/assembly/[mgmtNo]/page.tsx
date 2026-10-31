@@ -71,7 +71,11 @@ async function AssemblyUnit({
       {isNew === "1" && view.filled === 0 && (
         <p className="rounded-md bg-blue-100 px-4 py-3 text-sm text-blue-950">
           管理番号 <span className="font-mono font-bold">{view.mgmtNo}</span> を発行しました。
-          この番号のシールを本体と箱に貼ってから、部品を読んでください。（シールの印刷は次の段階で作ります）
+          この番号のシールを本体と箱に貼ってから、部品を読んでください。シールは事務所の PC の
+          <Link href={`/labels/print?u=${view.mgmtNo}&copies=2`} className="mx-1 font-bold underline">
+            シールの印刷
+          </Link>
+          で刷れます（「シールの一覧」にも出ます）。
         </p>
       )}
 

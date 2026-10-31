@@ -39,6 +39,10 @@ async function AssemblyHome() {
         </div>
       </Card>
 
+      <Link href="/labels" className="text-sm text-blue-800 underline">
+        管理番号シールを刷る（事務所の PC・PT-P700）
+      </Link>
+
       <Card title={`組立中 ${inProgress.length}台`}>
         {inProgress.length === 0 ? (
           <p className="px-5 py-4 text-sm text-stone-600">組立中の個体はありません。</p>
