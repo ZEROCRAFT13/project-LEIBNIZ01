@@ -20,8 +20,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0012_label_printed.sql` | 個体の管理番号シールを刷った時刻（units.label_printed_at）。まだ刷っていない個体を一覧に出す |
 | `migrations/0013_inspection_stages.sql` | 検品の3段階（①組立状態 ②Windows とベンチマーク ③出荷直前）、写真（inspection_photos）、検品担当の役割、温度・騒音の上限とチェック項目の初期値（settings） |
 | `migrations/0014_amazon_fulfillment.sql` | 機種ごとの Amazon の出荷方法（FBA／自社出荷／両方）と、出品（amazon_listings：セラー SKU と ASIN。消さずに止める） |
+| `migrations/0015_fba_inbound.sql` | FBA 納品の記録（下書き→発送→受領中→完了）。納品に入れられるのは出荷待ちで FBA の機種の個体だけ。発送・完了で個体の状態をトリガーが変える。受領数（fba_shipment_receipts） |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（146項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（165項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 3つの区画
 
@@ -39,7 +40,7 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 - **仕入れ**: `suppliers`, `purchases`, `purchase_lines`, `purchase_shipments`（発送・追跡番号）, `purchase_drafts`（メールから作る下書き）, `supplier_item_aliases`（ショップの商品名→型番）
 - **在庫**: `part_items`（部品1個ずつ）, `units`（個体＝管理番号）, `unit_parts`（個体に入っている部品と交換履歴）, `inspections`（段階ごとの検品の記録。直せない・消せない）, `inspection_photos`（配線・起動などの写真）, `asset_transfers`（区分の振替）
 - **Amazon の出品**: `amazon_listings`（機種ごとの FBA 用・自社出荷用のセラー SKU と ASIN）
-- **FBA**: `fba_shipments`, `fba_shipment_units`, `fba_inventory_snapshots`
+- **FBA**: `fba_shipments`（1件＝Amazon の1つの出荷 FBA15…）, `fba_shipment_units`（入れた個体と箱ごとの送り状番号）, `fba_shipment_receipts`（機種ごとの受領数）, `fba_inventory_snapshots`
 - **販売**: `customers`, `orders`, `order_lines`, `order_units`（注文と個体の紐づけ）, `product_registrations`（QRの製品登録）
 - **受信箱**: `conversations`, `messages`（本文は `pii.message_bodies`）
 - **修理**: `repair_tickets`, `rma_cases`

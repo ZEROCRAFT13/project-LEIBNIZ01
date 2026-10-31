@@ -699,4 +699,73 @@ SELECT pg_temp.check(
   (SELECT count(*) = 4 FROM audit.log WHERE table_name = 'core.amazon_listings'),
   '出品の登録と停止が監査ログに残る');
 
+-- ---------- FBA 納品（0015_fba_inbound） ----------
+SET ROLE zb_app;
+INSERT INTO core.units (mgmt_no, sku_id, status, assembled_by, inspected_by) VALUES
+  ('ZB-2611-0801', 1, 'ready', 2, 1), ('ZB-2611-0802', 1, 'ready', 2, 1),
+  ('ZB-2611-0803', 1, 'inspecting', 2, NULL), ('ZB-2611-0804', 2, 'ready', 2, 1);
+INSERT INTO core.fba_shipments (created_by) VALUES (1);
+CREATE TEMP VIEW fba1 AS SELECT min(id) AS id FROM core.fba_shipments;
+INSERT INTO core.fba_shipment_units (shipment_id, unit_id, added_by)
+SELECT (SELECT id FROM fba1), id, 1 FROM core.units WHERE mgmt_no IN ('ZB-2611-0801', 'ZB-2611-0802');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.fba_shipment_units (shipment_id, unit_id) SELECT (SELECT id FROM fba1), id FROM core.units WHERE mgmt_no = 'ZB-2611-0803'$$,
+  '検品が終わっていない個体を納品に入れる');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.fba_shipment_units (shipment_id, unit_id) SELECT (SELECT id FROM fba1), id FROM core.units WHERE mgmt_no = 'ZB-2611-0804'$$,
+  'FBA で売る設定でない機種の個体を納品に入れる');
+INSERT INTO core.fba_shipments (created_by) VALUES (1);
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.fba_shipment_units (shipment_id, unit_id) SELECT (SELECT max(id) FROM core.fba_shipments), id FROM core.units WHERE mgmt_no = 'ZB-2611-0801'$$,
+  '別の納品に入っている個体を、もう1つの納品に入れる');
+UPDATE core.fba_shipments SET status = 'cancelled' WHERE id = (SELECT max(id) FROM core.fba_shipments);
+SELECT pg_temp.expect_error($$UPDATE core.fba_shipments SET status = 'draft' WHERE status = 'cancelled'$$, '取り消した納品を戻す');
+SELECT pg_temp.expect_error($$UPDATE core.fba_shipments SET amazon_shipment_id = 'ABC123' WHERE id = (SELECT id FROM fba1)$$, 'Amazon の番号の形がちがう');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.fba_shipments SET status = 'shipped', shipped_at = now() WHERE id = (SELECT id FROM fba1)$$,
+  'Amazon の番号なしで発送');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.fba_shipments SET status = 'closed', closed_at = now() WHERE id = (SELECT id FROM fba1)$$,
+  '下書きからいきなり完了');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.fba_shipment_receipts (shipment_id, sku_id, received_qty) SELECT id, 1, 1 FROM fba1$$,
+  '発送前に受領数を入れる');
+UPDATE core.fba_shipment_units SET tracking_no = '4567-8901-2345' WHERE unit_id = (SELECT id FROM core.units WHERE mgmt_no = 'ZB-2611-0801');
+UPDATE core.fba_shipments SET amazon_shipment_id = 'FBA15TEST001', destination_fc = 'NRT5', carrier = 'yamato',
+                              status = 'shipped', shipped_at = now()
+ WHERE id = (SELECT id FROM fba1);
+SELECT pg_temp.check(
+  (SELECT bool_and(status = 'inbound_to_fba' AND ship_destination = 'fba' AND shipped_at IS NOT NULL)
+     FROM core.units WHERE mgmt_no IN ('ZB-2611-0801', 'ZB-2611-0802')),
+  '発送すると、入れた個体は「FBA へ輸送中」になる');
+SELECT pg_temp.expect_error(
+  $$DELETE FROM core.fba_shipment_units WHERE shipment_id = (SELECT id FROM fba1)$$, '発送した納品から個体を外す');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.fba_shipments SET amazon_shipment_id = 'FBA15TEST999' WHERE id = (SELECT id FROM fba1)$$, '発送後に Amazon の番号を変える');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.fba_shipment_receipts (shipment_id, sku_id, received_qty) SELECT id, 1, 3 FROM fba1$$,
+  '送った台数より多い受領数');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.fba_shipment_receipts (shipment_id, sku_id, received_qty) SELECT id, 2, 1 FROM fba1$$,
+  '納品に入っていない機種の受領数');
+INSERT INTO core.fba_shipment_receipts (shipment_id, sku_id, received_qty) SELECT id, 1, 1 FROM fba1;
+UPDATE core.fba_shipments SET status = 'receiving' WHERE id = (SELECT id FROM fba1);
+SELECT pg_temp.expect_error(
+  $$UPDATE core.fba_shipments SET status = 'closed', closed_at = now() WHERE id = (SELECT id FROM fba1)$$,
+  '全部受領される前に完了');
+UPDATE core.fba_shipment_receipts SET received_qty = 2 WHERE shipment_id = (SELECT id FROM fba1);
+UPDATE core.fba_shipments SET status = 'closed', closed_at = now() WHERE id = (SELECT id FROM fba1);
+SELECT pg_temp.check(
+  (SELECT bool_and(status = 'at_fba') FROM core.units WHERE mgmt_no IN ('ZB-2611-0801', 'ZB-2611-0802')),
+  '全部受領されて完了すると、個体は「FBA 在庫」になる');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.fba_shipment_receipts SET received_qty = 1 WHERE shipment_id = (SELECT id FROM fba1)$$, '完了した納品の受領数を直す');
+SELECT pg_temp.expect_error($$DELETE FROM core.fba_shipments$$, 'アプリ本体が納品を消す');
+RESET ROLE;
+SELECT pg_temp.expect_error($$DELETE FROM core.fba_shipments WHERE status = 'closed'$$, '管理者でも納品は消せない');
+SELECT pg_temp.check(
+  (SELECT count(*) >= 3 FROM audit.log WHERE table_name = 'core.fba_shipment_units')
+  AND (SELECT count(*) >= 2 FROM audit.log WHERE table_name = 'core.fba_shipment_receipts'),
+  '納品への出し入れと受領数が監査ログに残る');
+
 \echo ALL TESTS PASSED

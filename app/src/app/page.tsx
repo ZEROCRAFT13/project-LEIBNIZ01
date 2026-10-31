@@ -65,6 +65,15 @@ async function Menu({ searchParams }: { searchParams: PageProps<"/">["searchPara
         ]
       : []),
     ...(canManage(viewer)
+      ? [
+          {
+            href: "/fba",
+            title: "FBA 納品",
+            text: "出荷待ちの個体を納品にまとめ、Amazon の出荷の番号と送り状番号を記録する。受領数を入れると FBA 在庫になる",
+          },
+        ]
+      : []),
+    ...(canManage(viewer)
       ? [{ href: "/settings", title: "設定", text: "組立用の端末の登録、バイトの追加とPINの設定" }]
       : []),
   ];

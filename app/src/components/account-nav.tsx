@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { logoutAction } from "@/app/login/actions";
-import { canAssemble, canDocuments, canManage, canPurchase, getViewer } from "@/lib/auth/session";
+import { canAssemble, canDocuments, canInspect, canManage, canPurchase, getViewer } from "@/lib/auth/session";
 
 const linkClass = "rounded px-3 py-2 text-stone-300 hover:bg-stone-800 hover:text-white";
 
@@ -11,13 +11,15 @@ export async function AccountNav() {
 
   const links =
     viewer.kind === "worker"
-      ? [{ href: "/assembly", label: "組立" }]
+      ? [{ href: "/assembly", label: "組立" }, ...(canInspect(viewer) ? [{ href: "/inspection", label: "検品" }] : [])]
       : [
           { href: "/", label: "ホーム" },
           { href: "/trace", label: "個体トレース" },
           ...(canPurchase(viewer) ? [{ href: "/purchases", label: "仕入れ" }] : []),
           ...(canDocuments(viewer) ? [{ href: "/documents", label: "書類" }] : []),
           ...(canAssemble(viewer) ? [{ href: "/assembly", label: "組立" }] : []),
+          ...(canInspect(viewer) ? [{ href: "/inspection", label: "検品" }] : []),
+          ...(canManage(viewer) ? [{ href: "/fba", label: "FBA納品" }] : []),
           ...(canManage(viewer) ? [{ href: "/settings", label: "設定" }] : []),
         ];
 
