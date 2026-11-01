@@ -123,7 +123,7 @@ UPDATE core.units SET status = 'at_fba', shipped_at = '2026-10-05', ship_destina
 
 -- FBA注文: 製品登録のときに注文番号で個体と紐づける
 INSERT INTO core.orders (channel, external_order_no, is_fba, ordered_at, total_amount)
-VALUES ('amazon', '250-0000000-0001', true, '2026-10-20 10:00+09', 349800);
+VALUES ('amazon', '250-0000000-0000001', true, '2026-10-20 10:00+09', 349800);
 INSERT INTO core.order_lines (order_id, sku_id, description, qty, unit_price) VALUES (1, 1, 'ZB-G5070-R7', 1, 349800);
 
 INSERT INTO core.order_units (order_id, unit_id, link_method) VALUES (1, 1, 'product_registration');
@@ -159,11 +159,11 @@ SELECT pg_temp.check(
 -- DBの時刻設定が UTC でも、日本時間の深夜の注文は日本の日付で数える（0003）
 SET TIME ZONE 'UTC';
 INSERT INTO core.orders (channel, external_order_no, is_fba, ordered_at, total_amount)
-VALUES ('amazon', '250-0000000-0002', true, '2026-09-30 01:00+09', 349800);
+VALUES ('amazon', '250-0000000-0000002', true, '2026-09-30 01:00+09', 349800);
 INSERT INTO core.order_lines (order_id, sku_id, description, qty, unit_price)
-SELECT id, 1, 'ZB-G5070-R7', 1, 349800 FROM core.orders WHERE external_order_no = '250-0000000-0002';
+SELECT id, 1, 'ZB-G5070-R7', 1, 349800 FROM core.orders WHERE external_order_no = '250-0000000-0000002';
 INSERT INTO core.order_units (order_id, unit_id, link_method)
-SELECT id, 2, 'support' FROM core.orders WHERE external_order_no = '250-0000000-0002';
+SELECT id, 2, 'support' FROM core.orders WHERE external_order_no = '250-0000000-0000002';
 SELECT pg_temp.check(
   (SELECT warranty_start = '2026-09-30' FROM core.v_unit_warranty WHERE unit_id = 2),
   '日本時間 9/30 1:00 の注文は、DBがUTCでも 9/30 起算になる');
@@ -767,5 +767,74 @@ SELECT pg_temp.check(
   (SELECT count(*) >= 3 FROM audit.log WHERE table_name = 'core.fba_shipment_units')
   AND (SELECT count(*) >= 2 FROM audit.log WHERE table_name = 'core.fba_shipment_receipts'),
   '納品への出し入れと受領数が監査ログに残る');
+
+-- ---------- 自社出荷（0016_fbm_shipping） ----------
+SET ROLE zb_app;
+INSERT INTO core.units (mgmt_no, sku_id, status, assembled_by, inspected_by) VALUES
+  ('ZB-2611-0811', 1, 'ready', 2, 1), ('ZB-2611-0812', 1, 'ready', 2, 1), ('ZB-2611-0813', 2, 'ready', 2, 1);
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.orders (channel, external_order_no, ordered_at, total_amount) VALUES ('amazon', '250-123', now(), 1)$$,
+  'Amazon の注文番号の形がちがう');
+INSERT INTO core.orders (channel, external_order_no, is_fba, ordered_at, total_amount, ship_by, created_by)
+VALUES ('amazon', '250-0000000-0000811', false, now(), 699600, current_date + 2, 1);
+CREATE TEMP VIEW fbm1 AS SELECT id FROM core.orders WHERE external_order_no = '250-0000000-0000811';
+INSERT INTO core.order_lines (order_id, sku_id, description, qty, unit_price) SELECT id, 1, 'ZB-G5070-R7', 2, 349800 FROM fbm1;
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.order_units (order_id, unit_id, link_method) SELECT (SELECT id FROM fbm1), id, 'shipping' FROM core.units WHERE mgmt_no = 'ZB-2611-0803'$$,
+  '出荷待ちでない個体を注文に結びつける');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.order_units (order_id, unit_id, link_method) SELECT (SELECT id FROM fbm1), id, 'shipping' FROM core.units WHERE mgmt_no = 'ZB-2611-0813'$$,
+  '注文とちがう機種の個体を結びつける');
+INSERT INTO core.order_units (order_id, unit_id, link_method, linked_by)
+SELECT (SELECT id FROM fbm1), id, 'shipping', 1 FROM core.units WHERE mgmt_no = 'ZB-2611-0811';
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.order_units (order_id, unit_id, link_method) SELECT (SELECT id FROM fbm1), id, 'shipping' FROM core.units WHERE mgmt_no = 'ZB-2611-0811'$$,
+  '同じ個体を二重に結びつける');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.orders SET status = 'shipped', carrier = 'yamato' WHERE id = (SELECT id FROM fbm1)$$,
+  '注文の数だけ個体が結びつく前に発送');
+INSERT INTO core.order_units (order_id, unit_id, link_method, linked_by)
+SELECT (SELECT id FROM fbm1), id, 'shipping', 1 FROM core.units WHERE mgmt_no = 'ZB-2611-0812';
+UPDATE core.order_units SET tracking_no = '1111-2222-3333' WHERE order_id = (SELECT id FROM fbm1);
+SELECT pg_temp.expect_error(
+  $$UPDATE core.orders SET status = 'shipped' WHERE id = (SELECT id FROM fbm1)$$, '運送会社なしで発送');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.orders SET ship_notified_at = now() WHERE id = (SELECT id FROM fbm1)$$, '発送前に出荷通知を記録');
+UPDATE core.orders SET status = 'shipped', carrier = 'yamato' WHERE id = (SELECT id FROM fbm1);
+SELECT pg_temp.check(
+  (SELECT bool_and(status = 'shipped' AND ship_destination = 'customer' AND shipped_at IS NOT NULL)
+     FROM core.units WHERE mgmt_no IN ('ZB-2611-0811', 'ZB-2611-0812'))
+  AND (SELECT shipped_at IS NOT NULL FROM core.orders WHERE id = (SELECT id FROM fbm1)),
+  '発送すると、結びついた個体は「出荷済み」（お客様へ）になる');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.order_units SET unlinked_at = now(), unlink_reason = 'x' WHERE order_id = (SELECT id FROM fbm1)$$,
+  '発送した注文から個体を外す');
+SELECT pg_temp.expect_error($$UPDATE core.orders SET status = 'open' WHERE id = (SELECT id FROM fbm1)$$, '発送した注文を受付中に戻す');
+UPDATE core.orders SET ship_notified_at = now(), ship_notified_by = 1 WHERE id = (SELECT id FROM fbm1);
+SELECT pg_temp.expect_error($$DELETE FROM core.order_units$$, 'アプリ本体が注文と個体の結びつきを消す');
+SELECT pg_temp.expect_error($$DELETE FROM core.orders WHERE id = (SELECT id FROM fbm1)$$, '注文を消す');
+
+-- 取り消し：結びついた個体を外してから。個体は出荷待ちのまま
+INSERT INTO core.orders (channel, external_order_no, is_fba, ordered_at, total_amount)
+VALUES ('amazon', '250-0000000-0000812', false, now(), 239800);
+INSERT INTO core.order_lines (order_id, sku_id, description, qty, unit_price)
+SELECT id, 2, 'ZB-G5060-R5', 1, 239800 FROM core.orders WHERE external_order_no = '250-0000000-0000812';
+INSERT INTO core.order_units (order_id, unit_id, link_method)
+SELECT o.id, u.id, 'shipping' FROM core.orders o, core.units u WHERE o.external_order_no = '250-0000000-0000812' AND u.mgmt_no = 'ZB-2611-0813';
+SELECT pg_temp.expect_error(
+  $$UPDATE core.orders SET status = 'cancelled', cancel_reason = 'お客様都合' WHERE external_order_no = '250-0000000-0000812'$$,
+  '個体が結びついたまま取り消す');
+UPDATE core.order_units SET unlinked_at = now(), unlink_reason = '注文の取り消し'
+ WHERE order_id = (SELECT id FROM core.orders WHERE external_order_no = '250-0000000-0000812');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.orders SET status = 'cancelled' WHERE external_order_no = '250-0000000-0000812'$$, '理由なしで取り消す');
+UPDATE core.orders SET status = 'cancelled', cancel_reason = 'お客様都合' WHERE external_order_no = '250-0000000-0000812';
+SELECT pg_temp.check(
+  (SELECT status = 'ready' FROM core.units WHERE mgmt_no = 'ZB-2611-0813'),
+  '取り消した注文の個体は、出荷待ちのまま');
+RESET ROLE;
+SELECT pg_temp.check(
+  (SELECT count(*) >= 4 FROM audit.log WHERE table_name = 'core.order_units'),
+  '注文と個体の結びつけ・送り状番号・外したことが監査ログに残る');
 
 \echo ALL TESTS PASSED

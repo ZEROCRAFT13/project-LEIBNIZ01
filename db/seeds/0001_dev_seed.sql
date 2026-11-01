@@ -268,27 +268,27 @@ SET LOCAL session_replication_role = origin;
 INSERT INTO core.customers (is_corporate) VALUES (false), (false), (false);
 
 INSERT INTO core.orders (channel, external_order_no, is_fba, ordered_at, delivered_at, total_amount, status, customer_id) VALUES
-  ('amazon', '250-1100223-0077', true, '2026-08-26 21:10+09', '2026-08-27 18:00+09', 239800, 'delivered', 2),
-  ('amazon', '250-5550101-0102', true, '2026-09-12 09:30+09', '2026-09-13 17:00+09', 349800, 'delivered', 3),
-  ('amazon', '250-7712045-3390', true, '2026-09-23 20:45+09', '2026-09-24 19:00+09', 349800, 'delivered', 1);
+  ('amazon', '250-1100223-0000077', true, '2026-08-26 21:10+09', '2026-08-27 18:00+09', 239800, 'delivered', 2),
+  ('amazon', '250-5550101-0000102', true, '2026-09-12 09:30+09', '2026-09-13 17:00+09', 349800, 'delivered', 3),
+  ('amazon', '250-7712045-0003390', true, '2026-09-23 20:45+09', '2026-09-24 19:00+09', 349800, 'delivered', 1);
 
 INSERT INTO core.order_lines (order_id, sku_id, description, qty, unit_price)
 SELECT o.id, pg_temp.sku(v.sku), v.sku, 1, o.total_amount
-FROM (VALUES ('250-1100223-0077','ZB-G5060-R5'), ('250-5550101-0102','ZB-G5070-R7'),
-             ('250-7712045-3390','ZB-G5070-R7')) AS v(order_no, sku)
+FROM (VALUES ('250-1100223-0000077','ZB-G5060-R5'), ('250-5550101-0000102','ZB-G5070-R7'),
+             ('250-7712045-0003390','ZB-G5070-R7')) AS v(order_no, sku)
 JOIN core.orders o ON o.external_order_no = v.order_no;
 
 -- FBA注文と個体の紐づけ（製品登録と、問い合わせで管理番号を聞いたとき）
 INSERT INTO core.order_units (order_id, unit_id, link_method, linked_at)
 SELECT o.id, pg_temp.unit(v.mgmt_no), v.method, v.at::timestamptz
-FROM (VALUES ('250-7712045-3390','ZB-2609-0118','product_registration','2026-09-25 10:00+09'),
-             ('250-1100223-0077','ZB-2608-0077','support',             '2026-10-12 16:40+09'),
-             ('250-5550101-0102','ZB-2609-0102','support',             '2026-10-01 14:00+09')) AS v(order_no, mgmt_no, method, at)
+FROM (VALUES ('250-7712045-0003390','ZB-2609-0118','product_registration','2026-09-25 10:00+09'),
+             ('250-1100223-0000077','ZB-2608-0077','support',             '2026-10-12 16:40+09'),
+             ('250-5550101-0000102','ZB-2609-0102','support',             '2026-10-01 14:00+09')) AS v(order_no, mgmt_no, method, at)
 JOIN core.orders o ON o.external_order_no = v.order_no;
 
 INSERT INTO core.product_registrations (unit_id, customer_id, order_id, registered_at, verification)
 SELECT pg_temp.unit('ZB-2609-0118'), 1, o.id, '2026-09-25 10:00+09', 'verified'
-FROM core.orders o WHERE o.external_order_no = '250-7712045-3390';
+FROM core.orders o WHERE o.external_order_no = '250-7712045-0003390';
 
 -- ---------- 修理・RMA ----------
 INSERT INTO core.repair_tickets (unit_id, symptom, coverage, status, received_at, returned_at, note) VALUES

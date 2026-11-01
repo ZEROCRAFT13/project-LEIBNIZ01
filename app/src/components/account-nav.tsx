@@ -20,6 +20,7 @@ export async function AccountNav() {
           ...(canAssemble(viewer) ? [{ href: "/assembly", label: "組立" }] : []),
           ...(canInspect(viewer) ? [{ href: "/inspection", label: "検品" }] : []),
           ...(canManage(viewer) ? [{ href: "/fba", label: "FBA納品" }] : []),
+          ...(canManage(viewer) ? [{ href: "/fbm", label: "自社出荷" }] : []),
           ...(canManage(viewer) ? [{ href: "/settings", label: "設定" }] : []),
         ];
 
