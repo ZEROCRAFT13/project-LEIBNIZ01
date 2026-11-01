@@ -81,6 +81,25 @@ npm run dev          # http://localhost:3000 で画面が開く
 5. Google Workspace の管理コンソールで、2段階認証プロセスを「適用」にする
 6. `npm run dev` を起動し直して「Googleでログイン」
 
+## Amazon とつなぐ（SP-API）
+
+1. ソリューションプロバイダーポータルでアプリクライアントを作り（SP API・プロダクション・出品者。ロールは「在庫と注文の追跡」「Amazon から発送」「財務会計」）、「LWA 認証情報」と「アプリを承認」で出たリフレッシュトークンを控える
+2. `app/.env.local` に入れる（チャットやコードには書かない）
+   ```
+   SP_API_CLIENT_ID=amzn1.application-oa2-client.…
+   SP_API_CLIENT_SECRET=…
+   SP_API_REFRESH_TOKEN=Atzr|…
+   ```
+3. `npm run amazon:check` … つながるか確かめる。直近30日の自社出荷の注文の**件数だけ**を表示する（中身は出さない）
+4. `npm run amazon:watch` … 5分ごとに自社出荷の注文を取り込み、1日1回照合する。本番の定期実行（Cloud Scheduler が `/api/jobs/amazon-orders` を呼ぶ）ができるまでは、事務所の PC でこれを動かしておく
+
+- 取り込んだ注文は「自社出荷」に入り、ToDo に「出荷する」ができる。お客様の名前・住所は取らない
+- 出品（セラー SKU）が登録されていない注文は取り込まずに ToDo で知らせる。登録すると次の照合か「Amazon から今すぐ取り込む」で入る
+- Amazon で取り消された・発送済みになった注文が、ここで出荷待ちのままなら ToDo で知らせる（自動では取り消さない）
+- 30分以上取り込みが成功していなければ、ホームと ToDo に赤い警告が出る
+- クライアントシークレットは180日ごとに更新が要る（Amazon の決まり）
+- Orders API は v2026-01-01 を使う（v0 は 2027年3月27日までに廃止）
+
 ## よく使うコマンド
 
 | コマンド | すること |
@@ -93,6 +112,9 @@ npm run dev          # http://localhost:3000 で画面が開く
 | `npm test` | アプリのテスト（テスト用DBを作り直してから流す） |
 | `npm run db:psql` | 開発用DBに psql でつなぐ |
 | `npm run dev` | 画面を開発モードで起動する |
+| `npm run amazon:check` | Amazon（SP-API）につながるか確かめる（件数だけ表示） |
+| `npm run amazon:sync` / `amazon:reconcile` | 自社出荷の注文を1回取り込む（前回の続き／直近7日を見直す） |
+| `npm run amazon:watch` | 5分ごとに取り込み、1日1回照合する（止めるときは Ctrl+C） |
 | `npm run build` | 画面を本番用にビルドする |
 | `npm run lint` | コードの書き方をチェックする |
 

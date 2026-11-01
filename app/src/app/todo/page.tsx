@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { AmazonSyncAlert } from "@/components/amazon-sync-status";
 import { AddTaskForm, FinishTaskForm } from "@/components/todo/forms";
 import { Card, Loading, Tag } from "@/components/ui";
 import { requireUser } from "@/lib/auth/session";
@@ -34,6 +35,7 @@ async function Todo() {
 
   return (
     <>
+      <AmazonSyncAlert />
       {open.length === 0 && (
         <p role="status" className="rounded-md bg-green-100 px-4 py-3 text-green-950">
           今やることはありません。

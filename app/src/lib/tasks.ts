@@ -166,7 +166,8 @@ const TASK_FROM = `core.tasks t
   JOIN core.roles r ON r.code = t.role_code
   LEFT JOIN core.users au ON au.id = t.assignee_user_id
   LEFT JOIN core.users cu ON cu.id = t.completed_by_user_id
-  LEFT JOIN core.orders o ON t.source_ref LIKE 'order:%' AND o.id = substring(t.source_ref from 7)::bigint`;
+  LEFT JOIN core.orders o
+    ON o.id = CASE WHEN t.source_ref ~ '^order:[0-9]{1,18}$' THEN substring(t.source_ref from 7)::bigint END`;
 
 /** 終わっていないタスク（その人の役割のもの）。期限超過 → 期限の近い順 → 期限なし */
 export async function listOpenTasks(roles: string[]): Promise<TaskRow[]> {

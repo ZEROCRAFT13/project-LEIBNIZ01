@@ -23,8 +23,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0015_fba_inbound.sql` | FBA 納品の記録（下書き→発送→受領中→完了）。納品に入れられるのは出荷待ちで FBA の機種の個体だけ。発送・完了で個体の状態をトリガーが変える。受領数（fba_shipment_receipts） |
 | `migrations/0016_fbm_shipping.sql` | Amazon の自社出荷：注文の出荷期限・運送会社・発送・出荷通知の記録、個体ごとの送り状番号（order_units.tracking_no）。出荷待ちの個体だけ結びつけられ、発送で個体は「出荷済み」になる。注文番号の形（3-7-7けた）。注文と結びつきは消せない |
 | `migrations/0017_task_rules.sql` | ToDo の決まり：発生元ごとに終わっていないタスクは1つ、タスクは消さない（取り消しに理由）、終わったタスクは書き換えない |
+| `migrations/0018_amazon_order_sync.sql` | SP-API の注文の取り込みの記録（integration_runs：成功・どこまで取ったか・件数だけ。消せない）。注文の出どころ（手で／SP-API）と Amazon 側の状態 |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（189項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（194項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 3つの区画
 

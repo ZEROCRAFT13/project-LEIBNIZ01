@@ -861,4 +861,19 @@ SELECT pg_temp.expect_error($$DELETE FROM core.tasks$$, 'アプリ本体がタ�
 RESET ROLE;
 SELECT pg_temp.expect_error($$DELETE FROM core.tasks WHERE source_ref = 'order:999'$$, '管理者でもタスクは消せない');
 
+-- ---------- 注文の取り込みの記録（0018_amazon_order_sync） ----------
+SET ROLE zb_app;
+INSERT INTO core.integration_runs (kind, mode, cursor_from) VALUES ('amazon_orders', 'incremental', now() - interval '5 minutes');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.integration_runs SET finished_at = now(), ok = false WHERE kind = 'amazon_orders'$$, '失敗なのに理由がない');
+UPDATE core.integration_runs SET finished_at = now(), ok = true, cursor_to = now(), summary = '{"created": 1}' WHERE kind = 'amazon_orders';
+SELECT pg_temp.expect_error($$UPDATE core.integration_runs SET summary = '{}'$$, '終わった取り込みの記録を書き換える');
+SELECT pg_temp.expect_error($$DELETE FROM core.integration_runs$$, '取り込みの記録を消す');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.integration_runs (kind, mode) VALUES ('rakuten', 'incremental')$$, '決まっていない取り込みの種類');
+SELECT pg_temp.check(
+  (SELECT source = 'manual' AND amazon_status IS NULL FROM core.orders WHERE external_order_no = '250-0000000-0000811'),
+  'これまでの注文は「手で登録」のまま');
+RESET ROLE;
+
 \echo ALL TESTS PASSED

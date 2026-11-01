@@ -16,6 +16,8 @@ import {
   type FbmResult,
 } from "@/lib/fbm";
 import { parseFbmOrderInput } from "@/lib/fbm-calc";
+import { syncAmazonOrders } from "@/lib/amazon/order-sync";
+import { createSpApi, spApiConfigFromEnv } from "@/lib/amazon/sp-api";
 
 // 自社出荷の操作。最初に requireManager で「代表・工場長がログインしているか」を確かめる。
 // ここから Amazon には何も送らない（出荷通知はセラーセントラルで人が行い、その記録だけ残す）。
@@ -77,4 +79,22 @@ export async function notifiedAction(_prev: FbmState, formData: FormData): Promi
 
 export async function cancelAction(_prev: FbmState, formData: FormData): Promise<FbmState> {
   return done(await cancelFbmOrder(await actor(formData), idOf(formData), str(formData, "reason")));
+}
+
+/** Amazon から今すぐ取り込む（直近7日を見直す）。読むだけで、Amazon には何も送らない */
+export async function syncNowAction(): Promise<FbmState> {
+  await requireManager("/fbm");
+  const config = spApiConfigFromEnv();
+  if (!config) return { ok: false, message: "SP-API のキーが設定されていません（app/.env.local）。", at: Date.now() };
+  const r = await syncAmazonOrders(createSpApi(config), "manual");
+  if (!r.ok) return { ok: false, message: `取り込めませんでした：${r.error}`, at: Date.now() };
+  refresh();
+  const s = r.summary;
+  return {
+    ok: true,
+    message: `取り込みました：新しい注文 ${s.created}件、更新 ${s.updated}件（見た注文 ${s.fetched}件）${
+      s.unknownListing ? `。出品が未登録で取り込めない注文 ${s.unknownListing}件は ToDo に出しました` : ""
+    }`,
+    at: Date.now(),
+  };
 }

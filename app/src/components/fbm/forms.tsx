@@ -8,6 +8,7 @@ import {
   linkUnitAction,
   notifiedAction,
   shipAction,
+  syncNowAction,
   trackingAction,
   unlinkUnitAction,
   type FbmState,
@@ -314,6 +315,19 @@ export function NotifiedButton({ orderId, overdue }: { orderId: number; overdue:
       )}
       <button type="submit" disabled={pending} className={buttonClass}>
         セラーセントラルで出荷通知をした
+      </button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+/** Amazon から今すぐ取り込む */
+export function SyncNowButton({ disabled }: { disabled: boolean }) {
+  const [state, action, pending] = useActionState<FbmState, FormData>(syncNowAction, null);
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <button type="submit" disabled={pending || disabled} className={buttonClass}>
+        {pending ? "取り込んでいます…" : "Amazon から今すぐ取り込む（直近7日）"}
       </button>
       <Message state={state} />
     </form>

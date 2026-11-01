@@ -14,7 +14,11 @@
     "dev": "npm --prefix app run dev",
     "build": "npm --prefix app run build",
     "lint": "npm --prefix app run lint",
-    "docs:samples": "node scripts/sample-documents.mjs"
+    "docs:samples": "node scripts/sample-documents.mjs",
+    "amazon:check": "npm --prefix app run amazon -- check",
+    "amazon:sync": "npm --prefix app run amazon -- sync",
+    "amazon:reconcile": "npm --prefix app run amazon -- reconcile",
+    "amazon:watch": "npm --prefix app run amazon -- watch"
   },
   "engines": {
     "node": ">=22"
