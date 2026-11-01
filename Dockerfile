@@ -19,7 +19,7 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=8080 HOSTNAME=0.0.0.0 ZB_
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
-COPY --from=build --chown=node:node /app/scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --from=build --chown=node:node /app/scripts/migrate.mjs /app/scripts/bootstrap-owner.mjs ./scripts/
 COPY --chown=node:node db/migrations ./db/migrations
 USER node
 EXPOSE 8080
