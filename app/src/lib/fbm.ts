@@ -193,7 +193,7 @@ export async function createFbmOrder(actorId: number, input: FbmOrderInput): Pro
       `INSERT INTO core.order_lines (order_id, sku_id, description, qty, unit_price) VALUES ($1, $2, $3, $4, $5)`,
       [id, input.skuId, sku.rows[0].code, input.qty, input.totalAmount / input.qty],
     );
-    await createOrderTask(client, { kind: "user", userId: actorId }, id, input.orderNo, sku.rows[0].code, input.qty, input.shipBy);
+    await createOrderTask(client, { kind: "user", userId: actorId }, id, input.orderNo, [{ skuCode: sku.rows[0].code, qty: input.qty }], input.shipBy);
     return { ok: true, id, message: `注文 ${input.orderNo} を登録しました。ToDo に「出荷する」を足しました。` };
   });
 }
@@ -329,19 +329,23 @@ export async function createOrderTask(
   actor: Actor,
   orderId: number,
   orderNo: string,
-  skuCode: string,
-  qty: number,
+  items: { skuCode: string; qty: number }[],
   shipBy: string | null,
 ): Promise<number> {
-  const due = shipBy
-    ? (await client.query<{ due: Date }>(`SELECT (($1::date + 1)::timestamp AT TIME ZONE 'Asia/Tokyo') AS due`, [shipBy])).rows[0].due
-    : null;
+  const label = items.map((i) => `${i.skuCode} × ${i.qty}`).join("・");
   return createTask(client, actor, {
-    title: `自社出荷：${orderNo}（${skuCode} × ${qty}）を出荷する`,
+    title: `自社出荷：${orderNo}（${label}）を出荷する`,
     description: "出荷待ちの個体を結びつけ → 送り状番号を入れて発送 → セラーセントラルで出荷通知",
     roleCode: "factory_manager",
     sourceKind: "system",
     sourceRef: `order:${orderId}`,
-    dueAt: due,
+    dueAt: await shipByDue(client, shipBy),
   });
+}
+
+/** 出荷期限の日 → タスクの期限（その日の終わり、日本時間） */
+export async function shipByDue(client: PoolClient, shipBy: string | null): Promise<Date | null> {
+  if (!shipBy) return null;
+  const r = await client.query<{ due: Date }>(`SELECT (($1::date + 1)::timestamp AT TIME ZONE 'Asia/Tokyo') AS due`, [shipBy]);
+  return r.rows[0].due;
 }

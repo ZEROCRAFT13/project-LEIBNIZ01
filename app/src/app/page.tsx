@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { AmazonSyncAlert } from "@/components/amazon-sync-status";
 import { Loading } from "@/components/ui";
 import { countOpenTasks } from "@/lib/tasks";
 import { canAssemble, canDocuments, canInspect, canManage, canPurchase, requireUser } from "@/lib/auth/session";
@@ -92,6 +93,7 @@ async function Menu({ searchParams }: { searchParams: PageProps<"/">["searchPara
           その画面を使う役割がありません。必要なら代表に役割を付けてもらってください。
         </p>
       )}
+      <AmazonSyncAlert />
       <Link
         href="/todo"
         className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border-2 px-5 py-4 ${

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { NewOrderForm } from "@/components/fbm/forms";
+import { NewOrderForm, SyncNowButton } from "@/components/fbm/forms";
+import { getSyncHealth } from "@/lib/amazon/order-sync";
+import { spApiConfigFromEnv } from "@/lib/amazon/sp-api";
 import { Card, Loading, Tag } from "@/components/ui";
 import { requireManager } from "@/lib/auth/session";
 import { fbmStatusLabel } from "@/lib/fbm-calc";
@@ -27,9 +29,33 @@ export default function FbmPage() {
 
 async function Orders() {
   await requireManager("/fbm");
-  const [orders, skus, nowLocal] = await Promise.all([listFbmOrders(), listFbmSkus(), nowLocalMinute()]);
+  const configured = spApiConfigFromEnv() !== null;
+  const [orders, skus, nowLocal, health] = await Promise.all([
+    listFbmOrders(),
+    listFbmSkus(),
+    nowLocalMinute(),
+    getSyncHealth(configured),
+  ]);
   return (
     <>
+      <Card title="Amazon からの取り込み" aside={configured ? "5分ごと（本番）・1日1回の照合" : "SP-API のキーが未設定"}>
+        <div className="flex flex-col gap-3 px-5 py-4 text-sm">
+          {configured ? (
+            <p className={health.stale ? "font-bold text-red-800" : "text-stone-700"}>
+              最後に成功：{health.lastSuccessAt ? ymdHm(health.lastSuccessAt) : "まだ一度もありません"}
+              {health.stale && "（30分以上成功していません）"}
+              {health.lastError && `・最後のエラー：${health.lastError}`}
+            </p>
+          ) : (
+            <p className="text-stone-700">
+              app/.env.local に SP-API のキー（SP_API_CLIENT_ID・SP_API_CLIENT_SECRET・SP_API_REFRESH_TOKEN）を入れると、注文が自動で入り ToDo
+              に並びます。それまでは下の「注文を登録する」で手で入れてください。
+            </p>
+          )}
+          <SyncNowButton disabled={!configured} />
+        </div>
+      </Card>
+
       <Card title="注文">
         {orders.length === 0 ? (
           <p className="px-5 py-4 text-sm text-stone-600">自社出荷の注文はまだありません。</p>

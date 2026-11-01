@@ -11,6 +11,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // ログイン画面・Google から戻る窓口・画像や部品のファイルは、ログインなしで開ける
-  matcher: ["/((?!login|auth/|_next/static|_next/image|favicon\\.ico).*)"],
+  // ログイン画面・Google から戻る窓口・画像や部品のファイルは、ログインなしで開ける。
+  // 定期実行の窓口（/api/jobs/）は Cookie ではなく合言葉で確かめる（各 route.ts の jobSecretOk）
+  matcher: ["/((?!login|auth/|api/jobs/|_next/static|_next/image|favicon\\.ico).*)"],
 };
