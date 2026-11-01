@@ -109,6 +109,7 @@ npm run dev          # http://localhost:3000 で画面が開く
 | `npm run db:test` | テスト用DBを作り直して、マイグレーションとテストを流す |
 | `npm run db:reset` | 開発用DB（zerobit）を作り直して、マイグレーションを流す（空） |
 | `npm run db:seed` | 開発用DBを作り直して、ダミーデータを入れる |
+| `npm run db:migrate` | 開発用DBに、まだ流していないマイグレーションだけを流す（データは残す。本番と同じ流し方） |
 | `npm test` | アプリのテスト（テスト用DBを作り直してから流す） |
 | `npm run db:psql` | 開発用DBに psql でつなぐ |
 | `npm run dev` | 画面を開発モードで起動する |

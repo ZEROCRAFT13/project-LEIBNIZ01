@@ -16,6 +16,7 @@
 // （接続先は PGHOST / PGPORT / PGUSER / PGPASSWORD で指定）。
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +28,7 @@ const mode = process.env.ZB_DB_MODE === 'local' ? 'local' : 'docker';
 const DEV_DB = 'zerobit';
 const TEST_DB = 'zerobit_test';
 const APP_TEST_DB = 'zerobit_apptest';
+const MIGRATE_TEST_DB = 'zerobit_migratetest';
 // 開発用だけで使う zb_app のパスワード。自分のパソコンの中でしか使わない
 const APP_PASSWORD = process.env.ZB_APP_PASSWORD || 'zb-app-local-only';
 
@@ -102,9 +104,40 @@ function recreate(db) {
 function prepare(db, { seed }) {
   recreate(db);
   for (const f of sqlFiles('migrations')) psqlFile(db, f);
+  recordMigrations(db);
   if (seed) for (const f of sqlFiles('seeds')) psqlFile(db, f, { quiet: true });
   const quoted = APP_PASSWORD.replaceAll("'", "''");
   psqlCommand(db, `ALTER ROLE zb_app PASSWORD '${quoted}'`);
+}
+
+// 流したマイグレーションを記録する（本番と同じ public.schema_migrations。npm run db:migrate がこれを見て続きから流す）
+function recordMigrations(db) {
+  const rows = sqlFiles('migrations').map((f) => {
+    const name = f.split(sep).pop();
+    const sha = createHash('sha256').update(readFileSync(f)).digest('hex');
+    return `('${name}', '${sha}')`;
+  });
+  psqlCommand(db, `CREATE TABLE IF NOT EXISTS public.schema_migrations (
+      filename text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now());
+    INSERT INTO public.schema_migrations (filename, sha256) VALUES ${rows.join(', ')}`);
+}
+
+// 管理者（postgres）で接続する文字列（npm run db:migrate 用）
+function adminUrl(db) {
+  if (mode === 'local') {
+    const user = encodeURIComponent(process.env.PGUSER || 'postgres');
+    const pass = process.env.PGPASSWORD ? `:${encodeURIComponent(process.env.PGPASSWORD)}` : '';
+    if (process.env.PGHOST?.startsWith('/')) return `postgres://${user}${pass}@localhost/${db}?host=${encodeURIComponent(process.env.PGHOST)}`;
+    return `postgres://${user}${pass}@${process.env.PGHOST || 'localhost'}:${process.env.PGPORT || '5432'}/${db}`;
+  }
+  return `postgres://postgres:${encodeURIComponent(process.env.POSTGRES_PASSWORD ?? '')}@localhost:5432/${db}`;
+}
+
+function runMigrator(db) {
+  return run('node', [join(root, 'app', 'scripts', 'migrate.mjs')], {
+    env: { ...process.env, DATABASE_URL_ADMIN: adminUrl(db), ZB_APP_PASSWORD: APP_PASSWORD },
+    capture: true,
+  });
 }
 
 // アプリ（zb_app）がつなぐ接続文字列
@@ -165,8 +198,26 @@ switch (command) {
     if (r.status !== 0 || !out.includes('ALL TESTS PASSED')) {
       fail(`テストが失敗しました（${passed}項目まで通過）。上の ✗ の行を確認してください。`);
     }
-    console.log(`\n✓ ALL TESTS PASSED（${passed}項目）`);
+    // 本番と同じ「続きから流す」仕組みでも、空のDBに全部流せることと、2回目は何もしないことを確かめる
+    console.log('→ app/scripts/migrate.mjs（本番で使うマイグレーションの流し方）');
+    recreate(MIGRATE_TEST_DB);
+    const first = runMigrator(MIGRATE_TEST_DB);
+    const second = runMigrator(MIGRATE_TEST_DB);
+    const total = sqlFiles('migrations').length;
+    if (first.status !== 0 || !first.stdout.includes(`${total}件を流しました`) || second.status !== 0 || !second.stdout.includes('0件を流しました')) {
+      console.log(first.stdout, first.stderr, second.stdout, second.stderr);
+      fail('本番用のマイグレーションの流し方が失敗しました。');
+    }
+    console.log(`  ・OK: 空のDBに ${total}件を流せて、2回目は何もしない`);
+    console.log(`\n✓ ALL TESTS PASSED（${passed + 1}項目）`);
     break;
+  }
+  case 'migrate': {
+    // 開発用DB（zerobit）に、まだ流していないマイグレーションだけを流す（データは残す）
+    const r = runMigrator(DEV_DB);
+    process.stdout.write(r.stdout ?? '');
+    process.stderr.write(r.stderr ?? '');
+    process.exit(r.status ?? 1);
   }
   case 'app-test': {
     prepare(APP_TEST_DB, { seed: true });
@@ -182,6 +233,6 @@ switch (command) {
     process.exit(r.status ?? 0);
   }
   default:
-    console.log('使い方: node scripts/db.mjs up | reset | seed | test | app-test | psql');
+    console.log('使い方: node scripts/db.mjs up | reset | seed | migrate | test | app-test | psql');
     process.exit(command ? 1 : 0);
 }

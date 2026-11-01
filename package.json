@@ -9,7 +9,6 @@
     "db:seed": "node scripts/db.mjs seed",
     "db:test": "node scripts/db.mjs test",
     "test": "node scripts/db.mjs app-test",
-    "db:psql": "node scripts/db.mjs psql",
     "app:install": "npm --prefix app install",
     "dev": "npm --prefix app run dev",
     "build": "npm --prefix app run build",
@@ -18,7 +17,9 @@
     "amazon:check": "npm --prefix app run amazon -- check",
     "amazon:sync": "npm --prefix app run amazon -- sync",
     "amazon:reconcile": "npm --prefix app run amazon -- reconcile",
-    "amazon:watch": "npm --prefix app run amazon -- watch"
+    "amazon:watch": "npm --prefix app run amazon -- watch",
+    "db:migrate": "node scripts/db.mjs migrate",
+    "db:psql": "node scripts/db.mjs psql"
   },
   "engines": {
     "node": ">=22"

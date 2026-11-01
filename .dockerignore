@@ -1,0 +1,12 @@
+# コンテナに入れないもの（秘密情報・依存・ビルド結果・開発用のファイル）
+**/.env
+**/.env.*
+!**/.env.example
+**/node_modules
+app/.next
+.git
+.zerobit
+inbox
+db/seeds
+db/tests
+docs
