@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { Loading } from "@/components/ui";
+import { countOpenTasks } from "@/lib/tasks";
 import { canAssemble, canDocuments, canInspect, canManage, canPurchase, requireUser } from "@/lib/auth/session";
 
 // 仮のトップページ。ホーム（コントロールパネル）はフェーズ1の最後に作る
@@ -17,6 +18,7 @@ export default function Home({ searchParams }: PageProps<"/">) {
 
 async function Menu({ searchParams }: { searchParams: PageProps<"/">["searchParams"] }) {
   const [viewer, { denied }] = await Promise.all([requireUser("/"), searchParams]);
+  const tasks = await countOpenTasks(viewer.roles);
   const items = [
     {
       href: "/trace",
@@ -90,6 +92,17 @@ async function Menu({ searchParams }: { searchParams: PageProps<"/">["searchPara
           その画面を使う役割がありません。必要なら代表に役割を付けてもらってください。
         </p>
       )}
+      <Link
+        href="/todo"
+        className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border-2 px-5 py-4 ${
+          tasks.overdue > 0 ? "border-red-600 bg-red-50" : "border-blue-700 bg-white"
+        }`}
+      >
+        <span className="text-lg font-bold">ToDo</span>
+        <span>やること {tasks.open}件</span>
+        {tasks.overdue > 0 && <span className="font-bold text-red-800">期限を過ぎたもの {tasks.overdue}件</span>}
+        <span className="ml-auto text-sm text-blue-800">開く →</span>
+      </Link>
       <ul className="grid gap-4 sm:grid-cols-2">
         {items.map((i) => (
           <li key={i.href}>

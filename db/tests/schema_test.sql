@@ -837,4 +837,28 @@ SELECT pg_temp.check(
   (SELECT count(*) >= 4 FROM audit.log WHERE table_name = 'core.order_units'),
   '注文と個体の結びつけ・送り状番号・外したことが監査ログに残る');
 
+-- ---------- ToDo の決まり（0017_task_rules） ----------
+SET ROLE zb_app;
+INSERT INTO core.tasks (title, role_code, source_kind, source_ref, due_at)
+VALUES ('自社出荷：250-0000000-0000811 を出荷する', 'factory_manager', 'system', 'order:999', now() + interval '1 day');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.tasks (title, role_code, source_kind, source_ref) VALUES ('二重', 'factory_manager', 'system', 'order:999')$$,
+  '同じ発生元の、終わっていないタスクを2つ作る');
+SELECT pg_temp.expect_error($$INSERT INTO core.tasks (title, role_code, source_kind) VALUES ('  ', 'ceo', 'manual')$$, '空の題名');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.tasks SET source_ref = 'order:1' WHERE source_ref = 'order:999'$$, 'タスクの発生元を変える');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.tasks SET status = 'cancelled' WHERE source_ref = 'order:999'$$, '理由なしでタスクを取り消す');
+UPDATE core.tasks SET status = 'cancelled', cancel_reason = '注文の取り消し' WHERE source_ref = 'order:999';
+INSERT INTO core.tasks (title, role_code, source_kind, source_ref) VALUES ('作り直し', 'factory_manager', 'system', 'order:999');
+SELECT pg_temp.check(
+  (SELECT count(*) = 2 FROM core.tasks WHERE source_ref = 'order:999'),
+  '取り消したあとなら、同じ発生元のタスクをまた作れる');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.tasks SET status = 'todo', cancel_reason = NULL WHERE source_ref = 'order:999' AND status = 'cancelled'$$,
+  '終わったタスクを戻す');
+SELECT pg_temp.expect_error($$DELETE FROM core.tasks$$, 'アプリ本体がタスクを消す');
+RESET ROLE;
+SELECT pg_temp.expect_error($$DELETE FROM core.tasks WHERE source_ref = 'order:999'$$, '管理者でもタスクは消せない');
+
 \echo ALL TESTS PASSED

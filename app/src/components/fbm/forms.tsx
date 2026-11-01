@@ -293,11 +293,25 @@ export function ShipControls({ orderId, missing }: { orderId: number; missing: s
 }
 
 /** セラーセントラルで出荷通知をしたら押す（ここから Amazon には送らない） */
-export function NotifiedButton({ orderId }: { orderId: number }) {
+export function NotifiedButton({ orderId, overdue }: { orderId: number; overdue: boolean }) {
   const [state, action, pending] = useActionState<FbmState, FormData>(notifiedAction, null);
+  const [reason, setReason] = useState("");
   return (
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="orderId" value={orderId} />
+      {overdue && (
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          出荷期限を過ぎました。遅れた理由
+          <input
+            name="delayReason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={200}
+            placeholder="例：部品の入荷待ちで組立が遅れた"
+            className={inputClass}
+          />
+        </label>
+      )}
       <button type="submit" disabled={pending} className={buttonClass}>
         セラーセントラルで出荷通知をした
       </button>

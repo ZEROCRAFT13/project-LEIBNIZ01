@@ -14,6 +14,7 @@ export async function AccountNav() {
       ? [{ href: "/assembly", label: "組立" }, ...(canInspect(viewer) ? [{ href: "/inspection", label: "検品" }] : [])]
       : [
           { href: "/", label: "ホーム" },
+          { href: "/todo", label: "ToDo" },
           { href: "/trace", label: "個体トレース" },
           ...(canPurchase(viewer) ? [{ href: "/purchases", label: "仕入れ" }] : []),
           ...(canDocuments(viewer) ? [{ href: "/documents", label: "書類" }] : []),
