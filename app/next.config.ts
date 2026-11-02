@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
+import { fileURLToPath } from "node:url";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // 本番はコンテナ（Cloud Run）で動かす。必要なファイルだけを .next/standalone にまとめる
+  output: "standalone",
+  // リポジトリの一番上にも package.json があるので、まとめる範囲は app/ にする
+  outputFileTracingRoot: fileURLToPath(new URL(".", import.meta.url)),
   cacheComponents: true,
   partialPrefetching: true,
   experimental: {

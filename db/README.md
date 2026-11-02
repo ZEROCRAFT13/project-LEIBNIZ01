@@ -25,7 +25,15 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0017_task_rules.sql` | ToDo の決まり：発生元ごとに終わっていないタスクは1つ、タスクは消さない（取り消しに理由）、終わったタスクは書き換えない |
 | `migrations/0018_amazon_order_sync.sql` | SP-API の注文の取り込みの記録（integration_runs：成功・どこまで取ったか・件数だけ。消せない）。注文の出どころ（手で／SP-API）と Amazon 側の状態 |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（194項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（195項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+
+## 本番・検証でのマイグレーション
+
+- 本番と検証は作り直さず、`app/scripts/migrate.mjs` が**まだ流していないファイルだけ**を流す（管理者で接続。接続先は `DATABASE_URL_ADMIN`）
+- 流したファイルは `public.schema_migrations` に名前と中身のハッシュを残す。流したあとに中身が変わったファイルがあれば、何もせずに止まる（ルール8）
+- 1つのファイルは1つのトランザクションで流し、記録も一緒に書く。各ファイルは `BEGIN;` で始まり `COMMIT;` で終わる形にする
+- 開発用（`db:reset`・`db:seed`・`db:test`）も同じ表に記録するので、`npm run db:migrate` で続きから流せる
+- `npm run db:test` は最後に、空のDBに `migrate.mjs` で全部流せることと、2回目は何もしないことも確かめる
 
 ## 3つの区画
 
