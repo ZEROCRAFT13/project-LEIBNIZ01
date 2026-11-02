@@ -81,6 +81,10 @@ npm run dev          # http://localhost:3000 で画面が開く
 5. Google Workspace の管理コンソールで、2段階認証プロセスを「適用」にする
 6. `npm run dev` を起動し直して「Googleでログイン」
 
+## 本番・検証環境（Google Cloud）
+
+作り方と反映のしかたは [docs/deploy.md](docs/deploy.md)。main に入ると検証環境に自動で反映され、本番は GitHub の Actions から承認して反映する（反映の直前にデータベースのバックアップを自動で取る）。
+
 ## Amazon とつなぐ（SP-API）
 
 1. ソリューションプロバイダーポータルでアプリクライアントを作り（SP API・プロダクション・出品者。ロールは「在庫と注文の追跡」「Amazon から発送」「財務会計」）、「LWA 認証情報」と「アプリを承認」で出たリフレッシュトークンを控える

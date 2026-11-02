@@ -30,6 +30,8 @@ Amazon.co.jp（FBA）を主軸にPCを月100台組立・販売する会社の基
 - `npm test` … アプリ用のテストDBを作り直し、`app/` のテスト（vitest）を流す
 - `npm run dev` / `npm run build` / `npm run lint` … `app/` の Next.js
 
+本番・検証環境（Google Cloud）の作り方と反映は `docs/deploy.md`。`infra/setup.sh`（Cloud Shell で動かす）と `.github/workflows/deploy.yml`。
+
 DBやテストを変えたら `npm run db:test`、アプリのコードを変えたら `npm test`・`npm run build`・`npm run lint` が通ることを確かめてから報告する。
 
 アプリからDBへは `app/src/lib/db.ts` を使う。読み取りは `query()`、書き込みは必ず `withActor()` の中で行う（ルール7）。
