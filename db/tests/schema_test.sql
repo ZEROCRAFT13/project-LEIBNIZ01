@@ -876,4 +876,48 @@ SELECT pg_temp.check(
   'これまでの注文は「手で登録」のまま');
 RESET ROLE;
 
+-- ---------- バックアップのロールと記録（0019_db_backup） ----------
+-- 新しい表を足すたびに、バックアップから漏れていないかをここで見つける
+CREATE TABLE core.zz_backup_probe (id int);   -- マイグレーションのあとに足した表も読めるか（既定の権限）
+SELECT pg_temp.check(
+  (SELECT count(*) = 0 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname IN ('core', 'pii', 'audit', 'auth', 'public') AND c.relkind IN ('r', 'p', 'S')
+      AND NOT has_table_privilege('zb_backup', c.oid, 'SELECT')),
+  'バックアップのロールは、全部の区画の全部の表と番号（個人情報を含む）を読める');
+DROP TABLE core.zz_backup_probe;
+SELECT pg_temp.check(
+  (SELECT count(*) = 0 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname IN ('core', 'pii', 'audit', 'auth', 'public') AND c.relkind IN ('r', 'p')
+      AND (c.oid <> 'core.integration_runs'::regclass
+           AND (has_table_privilege('zb_backup', c.oid, 'INSERT') OR has_table_privilege('zb_backup', c.oid, 'UPDATE')))
+       OR has_table_privilege('zb_backup', c.oid, 'DELETE') OR has_table_privilege('zb_backup', c.oid, 'TRUNCATE')),
+  'バックアップのロールが書けるのは、取り込みの記録の表だけ（消すことはどこもできない）');
+SELECT pg_temp.check(
+  (SELECT NOT (rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication) FROM pg_roles WHERE rolname = 'zb_backup'),
+  'バックアップのロールに強い権限はない');
+
+SET ROLE zb_backup;
+SELECT pg_temp.check((SELECT count(*) >= 0 FROM pii.customer_profiles), 'バックアップのロールは個人情報の表も読める');
+INSERT INTO core.integration_runs (kind, mode) VALUES ('db_backup', 'scheduled');
+UPDATE core.integration_runs SET finished_at = now(), ok = true, summary = '{"bytes": 1234}' WHERE kind = 'db_backup';
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.integration_runs (kind, mode) VALUES ('amazon_orders', 'incremental')$$,
+  'バックアップのロールが注文の取り込みの記録を作る');
+SELECT pg_temp.expect_error($$UPDATE core.integration_runs SET summary = '{}' WHERE kind = 'amazon_orders'$$,
+  'バックアップのロールが注文の取り込みの記録を変える');
+SELECT pg_temp.expect_error($$INSERT INTO core.skus (code, name, list_price) VALUES ('ZB-X', 'x', 1)$$,
+  'バックアップのロールが業務データを書く');
+SELECT pg_temp.expect_error($$DELETE FROM core.integration_runs WHERE kind = 'db_backup'$$, 'バックアップの記録を消す');
+RESET ROLE;
+INSERT INTO core.integration_runs (kind, mode) VALUES ('db_backup', 'manual');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.integration_runs SET kind = 'amazon_orders' WHERE kind = 'db_backup' AND finished_at IS NULL$$,
+  '記録の種類を変える');
+UPDATE core.integration_runs SET finished_at = now(), ok = false, error = 'テスト' WHERE kind = 'db_backup' AND finished_at IS NULL;
+SET ROLE zb_app;
+SELECT pg_temp.check(
+  (SELECT count(*) = 1 FROM core.integration_runs WHERE kind = 'db_backup' AND ok),
+  'アプリはバックアップの記録を読める（ホームの警告用）');
+RESET ROLE;
+
 \echo ALL TESTS PASSED

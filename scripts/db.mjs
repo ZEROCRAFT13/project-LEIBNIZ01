@@ -31,6 +31,8 @@ const APP_TEST_DB = 'zerobit_apptest';
 const MIGRATE_TEST_DB = 'zerobit_migratetest';
 // 開発用だけで使う zb_app のパスワード。自分のパソコンの中でしか使わない
 const APP_PASSWORD = process.env.ZB_APP_PASSWORD || 'zb-app-local-only';
+// 開発用だけで使う zb_backup（バックアップ用・読むだけ）のパスワード。バックアップのテストで使う
+const BACKUP_PASSWORD = 'zb-backup-local-only';
 
 function fail(message) {
   console.error(`\n✗ ${message}`);
@@ -108,6 +110,7 @@ function prepare(db, { seed }) {
   if (seed) for (const f of sqlFiles('seeds')) psqlFile(db, f, { quiet: true });
   const quoted = APP_PASSWORD.replaceAll("'", "''");
   psqlCommand(db, `ALTER ROLE zb_app PASSWORD '${quoted}'`);
+  psqlCommand(db, `ALTER ROLE zb_backup WITH LOGIN PASSWORD '${BACKUP_PASSWORD}'`);
 }
 
 // 流したマイグレーションを記録する（本番と同じ public.schema_migrations。npm run db:migrate がこれを見て続きから流す）
@@ -135,14 +138,14 @@ function adminUrl(db) {
 
 function runMigrator(db) {
   return run('node', [join(root, 'app', 'scripts', 'migrate.mjs')], {
-    env: { ...process.env, DATABASE_URL_ADMIN: adminUrl(db), ZB_APP_PASSWORD: APP_PASSWORD },
+    env: { ...process.env, DATABASE_URL_ADMIN: adminUrl(db), ZB_APP_PASSWORD: APP_PASSWORD, ZB_BACKUP_PASSWORD: BACKUP_PASSWORD },
     capture: true,
   });
 }
 
-// アプリ（zb_app）がつなぐ接続文字列
-function appUrl(db) {
-  const user = `zb_app:${encodeURIComponent(APP_PASSWORD)}`;
+// アプリ（zb_app）がつなぐ接続文字列。role を変えると、ほかのロール（zb_backup）の接続文字列
+function appUrl(db, role = 'zb_app', password = APP_PASSWORD) {
+  const user = `${role}:${encodeURIComponent(password)}`;
   if (mode === 'local' && process.env.PGHOST?.startsWith('/')) {
     return `postgres://${user}@localhost/${db}?host=${encodeURIComponent(process.env.PGHOST)}`;
   }
@@ -224,7 +227,7 @@ switch (command) {
     console.log('→ app のテスト（vitest）');
     const r = run('npx', ['vitest', 'run'], {
       cwd: join(root, 'app'),
-      env: { ...process.env, DATABASE_URL: appUrl(APP_TEST_DB) },
+      env: { ...process.env, DATABASE_URL: appUrl(APP_TEST_DB), DATABASE_URL_BACKUP: appUrl(APP_TEST_DB, 'zb_backup', BACKUP_PASSWORD) },
     });
     process.exit(r.status ?? 1);
   }
