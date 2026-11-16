@@ -179,9 +179,19 @@ try: print("    （" + json.load(sys.stdin)["error"]["message"][:200] + "）")
 except Exception: pass'
   exit 1
 fi
-gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$STS_SA" --role=roles/storage.objectViewer >/dev/null
-gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$STS_SA" --role=roles/storage.legacyBucketReader >/dev/null
-gcloud storage buckets add-iam-policy-binding "gs://$BACKUP_BUCKET" --member="serviceAccount:$STS_SA" --role=roles/storage.legacyBucketWriter >/dev/null
+# できたばかりのアカウントは、数分「ない」と言われることがあるので、待って試し直す
+sts_bind() { # バケット 役割
+  local i
+  for i in $(seq 1 12); do
+    gcloud storage buckets add-iam-policy-binding "gs://$1" --member="serviceAccount:$STS_SA" --role="$2" >/dev/null 2>&1 && return 0
+    echo "  …転送サービスのアカウントができるのを待っています（${i}/12）"
+    sleep 15
+  done
+  gcloud storage buckets add-iam-policy-binding "gs://$1" --member="serviceAccount:$STS_SA" --role="$2" >/dev/null
+}
+sts_bind "$BUCKET" roles/storage.objectViewer
+sts_bind "$BUCKET" roles/storage.legacyBucketReader
+sts_bind "$BACKUP_BUCKET" roles/storage.legacyBucketWriter
 if ! gcloud transfer jobs describe zerobit-files-to-osaka >/dev/null 2>&1; then
   gcloud transfer jobs create "gs://$BUCKET" "gs://$BACKUP_BUCKET/files/" --name=zerobit-files-to-osaka \
     --description="ZERO-BIT 書類・写真を大阪へ（消さない・上書きしない）" \
