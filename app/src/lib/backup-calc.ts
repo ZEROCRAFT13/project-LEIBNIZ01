@@ -40,6 +40,14 @@ export function backupWarnings(successes: BackupRun[], now: Date): BackupWarning
   return { lastSuccessAt: latest.finishedAt, stale, sizeJump };
 }
 
+/** 復元の試験は毎月。最後の合格から35日を過ぎたら（まだ一度もなければ）知らせる */
+export const RESTORE_TEST_DAYS = 35;
+
+export function restoreTestDue(lastPassedAt: Date | null, now: Date): boolean {
+  if (!lastPassedAt) return true;
+  return now.getTime() - lastPassedAt.getTime() > RESTORE_TEST_DAYS * 24 * 60 * 60 * 1000;
+}
+
 /** 画面に出す大きさ（MB、小数1けた） */
 export function megabytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;

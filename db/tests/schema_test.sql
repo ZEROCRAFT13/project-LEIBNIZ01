@@ -920,4 +920,18 @@ SELECT pg_temp.check(
   'アプリはバックアップの記録を読める（ホームの警告用）');
 RESET ROLE;
 
+-- ---------- 復元の試験の記録（0020_restore_test） ----------
+INSERT INTO core.integration_runs (kind, mode, finished_at, ok, summary)
+  VALUES ('restore_test', 'manual', now(), true, '{"tables": 57, "mismatches": []}');
+SET ROLE zb_backup;
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.integration_runs (kind, mode) VALUES ('restore_test', 'manual')$$,
+  'バックアップのロールが復元の試験の記録を作る');
+RESET ROLE;
+SET ROLE zb_app;
+SELECT pg_temp.check(
+  (SELECT count(*) = 1 FROM core.integration_runs WHERE kind = 'restore_test' AND ok),
+  'アプリは復元の試験の記録を読める（ホームの知らせ用）');
+RESET ROLE;
+
 \echo ALL TESTS PASSED

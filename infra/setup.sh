@@ -54,7 +54,7 @@ PROJECT_NUMBER=$(gcloud projects describe "$PROJECT" --format='value(projectNumb
 say "使う機能（API）を有効にする（数分かかることがある）"
 gcloud services enable run.googleapis.com sqladmin.googleapis.com secretmanager.googleapis.com \
   cloudscheduler.googleapis.com artifactregistry.googleapis.com iam.googleapis.com iamcredentials.googleapis.com \
-  sts.googleapis.com compute.googleapis.com storage.googleapis.com
+  sts.googleapis.com compute.googleapis.com storage.googleapis.com storagetransfer.googleapis.com
 ok "有効にしました"
 
 say "コンテナの置き場所（Artifact Registry）"
@@ -157,6 +157,21 @@ rm -f "$LIFECYCLE"
 gcloud storage buckets add-iam-policy-binding "gs://$BACKUP_BUCKET" --member="serviceAccount:$BACKUP_SA" --role=roles/storage.objectCreator >/dev/null
 gcloud storage buckets add-iam-policy-binding "gs://$BACKUP_BUCKET" --member="serviceAccount:$BACKUP_SA" --role=roles/storage.objectViewer >/dev/null
 ok "gs://$BACKUP_BUCKET（大阪。1時間ごと ${KEEP_HOURLY}日・日 ${KEEP_DAILY}日・月 ${KEEP_MONTHLY}日・年 ${KEEP_YEARLY}日。${BACKUP_LOCK}は誰も消せない）"
+
+say "書類・写真のファイルを大阪へ写す（Storage Transfer Service・1時間ごと）"
+# 写すだけ（元にないものを消さない・同じ名前は上書きしない）。ファイルは中身のハッシュの名前なので、同じ名前なら同じ中身
+STS_SA=$(curl -fsS -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  "https://storagetransfer.googleapis.com/v1/googleServiceAccounts/${PROJECT}" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["accountEmail"])')
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$STS_SA" --role=roles/storage.objectViewer >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$STS_SA" --role=roles/storage.legacyBucketReader >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://$BACKUP_BUCKET" --member="serviceAccount:$STS_SA" --role=roles/storage.legacyBucketWriter >/dev/null
+if ! gcloud transfer jobs describe zerobit-files-to-osaka >/dev/null 2>&1; then
+  gcloud transfer jobs create "gs://$BUCKET" "gs://$BACKUP_BUCKET/files/" --name=zerobit-files-to-osaka \
+    --description="ZERO-BIT 書類・写真を大阪へ（消さない・上書きしない）" \
+    --schedule-repeats-every=1h --overwrite-when=never >/dev/null
+fi
+ok "gs://$BUCKET → gs://$BACKUP_BUCKET/files/（1時間ごと。はじめの1回は権限が行き渡るまで失敗することがある）"
 
 say "バックアップの暗号化の鍵（age）"
 if ! secret_exists backup-age-recipient; then

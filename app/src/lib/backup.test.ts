@@ -17,8 +17,8 @@ import {
   shortError,
   splitPassword,
 } from "../../scripts/backup.mjs";
-import { backupWarnings, JUMP_MIN_BYTES, median, megabytes } from "@/lib/backup-calc";
-import { getBackupWarnings } from "@/lib/backup-health";
+import { backupWarnings, JUMP_MIN_BYTES, median, megabytes, restoreTestDue } from "@/lib/backup-calc";
+import { getBackupWarnings, getRestoreTestStatus } from "@/lib/backup-health";
 import { getPool, query } from "@/lib/db";
 
 const BACKUP_URL = process.env.DATABASE_URL_BACKUP;
@@ -83,6 +83,12 @@ describe("ホームの警告の計算", () => {
   it("小さいうちは、倍になっても差が 5MB 未満なら出さない", () => {
     expect(backupWarnings([run(10, 1), run(70, 0.3)], now).sizeJump).toBeNull();
     expect(JUMP_MIN_BYTES).toBe(5 * 1024 * 1024);
+  });
+
+  it("復元の試験は、まだ一度もないか、最後の合格から35日を過ぎたら知らせる", () => {
+    expect(restoreTestDue(null, now)).toBe(true);
+    expect(restoreTestDue(new Date(now.getTime() - 35 * 86_400_000), now)).toBe(false);
+    expect(restoreTestDue(new Date(now.getTime() - 35 * 86_400_000 - 60_000), now)).toBe(true);
   });
 
   it("真ん中の値と MB の表示", () => {
@@ -159,6 +165,11 @@ describe.skipIf(!BACKUP_URL)("バックアップを1回とる（テスト用DB�
   it("公開鍵がない・形が違うときは、何もせずに止める", async () => {
     await expect(runBackup({ url: BACKUP_URL!, recipient: "", target: localTarget(dir), dump: fakeDump })).rejects.toThrow(/公開鍵/);
     await expect(runBackup({ url: BACKUP_URL!, recipient: "age1bad", target: localTarget(dir), dump: fakeDump })).rejects.toThrow(/公開鍵/);
+  });
+
+  it("復元の試験の記録がなければ「まだ」と知らせる（アプリのロールで読める）", async () => {
+    const r = await getRestoreTestStatus();
+    expect(r.due).toBe(true);
   });
 
   it("ホームの警告は、最後に成功した時刻をアプリのロールで読める", async () => {
