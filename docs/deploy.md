@@ -133,6 +133,18 @@ gcloud run jobs execute zerobit-migrate --region=asia-northeast1 --wait \
 
 ## 困ったとき
 
+### 「Error: Forbidden … does not have permission to get URL」と出る
+
+Cloud Run が「ログインしていない人は通さない」設定のままになっています。会社の Google Workspace の下にプロジェクトを作ると、組織のポリシーで「誰でも（allUsers）」に権限を付けられないため、昔の `--allow-unauthenticated` では外せませんでした（反映のログに `Setting IAM policy failed` と出ます）。
+
+今の「反映」は `--no-invoker-iam-check`（Cloud Run 側の確認を切る）を使うので、反映し直せば直ります。急ぐときは Cloud Shell で：
+
+```
+gcloud run services update zerobit --project=プロジェクトID --region=asia-northeast1 --no-invoker-iam-check
+```
+
+これで誰でも入れるようになるわけではありません。外からはロードバランサ（自社ドメイン）経由でしか届かず（`--ingress=internal-and-cloud-load-balancing`）、画面はアプリの Google ログインで守っています。
+
 ### 1つ前の版に戻す（画面）
 
 Cloud Shell で：
