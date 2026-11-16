@@ -1,6 +1,6 @@
 // 自社出荷の入力の確かめ（DBを使わない）
 import { describe, expect, it } from "vitest";
-import { isAmazonOrderNo, missingForFbmShip, normalizeAmazonOrderNo, parseFbmOrderInput } from "@/lib/fbm-calc";
+import { AMAZON_CARRIER_CODES, buildShipPackages, isAmazonOrderNo, missingForFbmShip, normalizeAmazonOrderNo, parseFbmOrderInput } from "@/lib/fbm-calc";
 
 const now = new Date("2026-11-01T09:00:00+09:00");
 const ok = { orderNo: "503-1234567-1234567", orderedAt: "2026-11-01T08:30", skuId: "3", qty: "1", totalAmount: "429,800" };
@@ -58,5 +58,72 @@ describe("発送の前に足りないもの", () => {
       "運送会社を選んでください",
     ]);
     expect(missingForFbmShip({ qty: 1, linked: 1, withoutTracking: 0, carrier: "yamato" })).toEqual([]);
+  });
+});
+
+describe("Amazon への出荷通知の中身", () => {
+  const units = [
+    { mgmtNo: "ZB-2611-0001", skuId: 1, trackingNo: "1111-2222-3333" },
+    { mgmtNo: "ZB-2611-0002", skuId: 1, trackingNo: "4444-5555-6666" },
+    { mgmtNo: "ZB-2611-0003", skuId: 2, trackingNo: "4444-5555-6666" },
+  ];
+  const items = [
+    { orderItemId: "A1", sellerSku: "X-FBM", skuId: 1, quantity: 2 },
+    { orderItemId: "B1", sellerSku: "Y-FBM", skuId: 2, quantity: 1 },
+  ];
+
+  it("運送会社は Amazon の決まった配送業者コードにする。ほかの運送会社はこの画面から送らない", () => {
+    expect(AMAZON_CARRIER_CODES.yamato).toBe("Yamato Transport");
+    expect(AMAZON_CARRIER_CODES.sagawa).toBe("Sagawa Express");
+    expect(AMAZON_CARRIER_CODES.japanpost).toBe("Japan Post");
+    expect(AMAZON_CARRIER_CODES.seino).toBeUndefined();
+    expect(AMAZON_CARRIER_CODES.other).toBeUndefined();
+  });
+
+  it("送り状番号ごとに1箱にまとめ、明細の番号と数を入れる。箱の番号は送り状番号が出てきた順", () => {
+    expect(buildShipPackages(units, items)).toEqual({
+      ok: true,
+      packages: [
+        { packageReferenceId: "1", trackingNumber: "1111-2222-3333", mgmtNos: ["ZB-2611-0001"], orderItems: [{ orderItemId: "A1", quantity: 1 }] },
+        {
+          packageReferenceId: "2",
+          trackingNumber: "4444-5555-6666",
+          mgmtNos: ["ZB-2611-0002", "ZB-2611-0003"],
+          orderItems: [
+            { orderItemId: "A1", quantity: 1 },
+            { orderItemId: "B1", quantity: 1 },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("同じ機種の明細が2つあれば、上から順に詰める。取り消された明細（数0）は使わない", () => {
+    const r = buildShipPackages(units.slice(0, 2), [
+      { orderItemId: "C0", sellerSku: "X-FBM", skuId: 1, quantity: 0 },
+      { orderItemId: "A1", sellerSku: "X-FBM", skuId: 1, quantity: 1 },
+      { orderItemId: "A2", sellerSku: "X-FBM", skuId: 1, quantity: 1 },
+    ]);
+    expect(r.ok && r.packages.map((p) => p.orderItems)).toEqual([[{ orderItemId: "A1", quantity: 1 }], [{ orderItemId: "A2", quantity: 1 }]]);
+  });
+
+  it("Amazon の注文と、結びついた個体の数が機種ごとに合わなければ送らない", () => {
+    expect(buildShipPackages(units.slice(0, 2), items)).toMatchObject({ ok: false, errors: [expect.stringContaining("合わない")] });
+    expect(buildShipPackages(units, [{ ...items[0], quantity: 3 }, items[1]])).toMatchObject({ ok: false });
+  });
+
+  it("出品が未登録の明細・送り状番号のない箱があれば送らない", () => {
+    expect(buildShipPackages(units, [items[0], { ...items[1], skuId: null }])).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([expect.stringContaining("Y-FBM")]),
+    });
+    expect(buildShipPackages([{ ...units[0], trackingNo: null }], [{ ...items[0], quantity: 1 }])).toMatchObject({
+      ok: false,
+      errors: [expect.stringContaining("送り状番号")],
+    });
+  });
+
+  it("同じ注文なら何度作っても同じ箱の番号になる（送り直すと Amazon 側で同じ箱が直る）", () => {
+    expect(buildShipPackages(units, items)).toEqual(buildShipPackages(units, items));
   });
 });

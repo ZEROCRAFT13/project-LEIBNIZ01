@@ -934,4 +934,31 @@ SELECT pg_temp.check(
   'アプリは復元の試験の記録を読める（ホームの知らせ用）');
 RESET ROLE;
 
+-- ---------- 外に出る操作の記録（0021_outbound_actions） ----------
+SET ROLE zb_app;
+INSERT INTO core.outbound_actions (kind, subject_type, subject_id, payload, approved_by)
+  VALUES ('amazon_ship_confirm', 'order', 1, '{"orderNo": "250-0000000-0000811"}', 1);
+SELECT pg_temp.expect_error(
+  $$UPDATE core.outbound_actions SET payload = '{"orderNo": "x"}' WHERE kind = 'amazon_ship_confirm'$$,
+  '承認した中身をあとから変える');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.outbound_actions SET status = 'failed', finished_at = now() WHERE kind = 'amazon_ship_confirm'$$,
+  '失敗なのに理由がない');
+UPDATE core.outbound_actions SET status = 'sent', finished_at = now() WHERE kind = 'amazon_ship_confirm';
+SELECT pg_temp.expect_error(
+  $$UPDATE core.outbound_actions SET status = 'failed', finished_at = now(), error = 'x' WHERE kind = 'amazon_ship_confirm'$$,
+  '終わった送信の記録を変える');
+SELECT pg_temp.expect_error($$DELETE FROM core.outbound_actions$$, '外に出る操作の記録を消す');
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.outbound_actions (kind, subject_type, subject_id, payload, approved_by) VALUES ('line_message', 'order', 1, '{}', 1)$$,
+  '決まっていない種類の送信');
+SELECT pg_temp.expect_error(
+  $$UPDATE core.orders SET ship_notified_via = 'sp_api' WHERE ship_notified_at IS NULL AND id = (SELECT min(id) FROM core.orders WHERE ship_notified_at IS NULL)$$,
+  '出荷通知をしていないのに、通知の方法だけ入れる');
+RESET ROLE;
+SELECT pg_temp.check(
+  (SELECT count(*) >= 1 FROM audit.log WHERE table_name = 'core.outbound_actions'),
+  '外に出る操作の記録は監査ログにも残る');
+SELECT pg_temp.expect_error($$DELETE FROM core.outbound_actions$$, '管理者でも外に出る操作の記録は消せない');
+
 \echo ALL TESTS PASSED

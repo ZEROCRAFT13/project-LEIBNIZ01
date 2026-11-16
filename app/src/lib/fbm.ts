@@ -8,7 +8,7 @@ import { TaskRefused, cancelTask, completeTask, createTask, findOpenTask, startT
 
 // Amazon の自社出荷（FBM）。まずは手で記録する：注文番号で注文を登録し、出荷待ちの個体を結びつけ、
 // 送り状番号を入れて発送する。お客様の名前・住所はここに持たない（セラーセントラルや運送会社のシステムで扱う）。
-// Amazon への出荷通知は、当面はセラーセントラルで人が行い、行ったことを記録する（ここからは何も送らない）。
+// Amazon への出荷通知は、この画面から承認して SP-API で送る（lib/fbm-ship.ts）か、セラーセントラルで人が行って記録する。
 // 個体の状態は DB のトリガー（0016）が注文の状態に合わせて変える。
 // actorId は、呼ぶ側（app/fbm/actions.ts）が requireManager でログインから決めたものを渡す。
 
@@ -273,7 +273,7 @@ export async function markFbmShipped(actorId: number, orderId: number): Promise<
     await client.query(`UPDATE core.orders SET status = 'shipped', shipped_at = now() WHERE id = $1`, [orderId]);
     return {
       ok: true,
-      message: "発送しました。セラーセントラルで出荷通知（送り状番号の入力）をして、終わったら「出荷通知をした」を押してください。",
+      message: "発送しました。下の「Amazon への出荷通知」で中身を確かめて、送ってください。",
     };
   });
 }
@@ -284,7 +284,8 @@ export async function markShipNotified(actorId: number, orderId: number, delayRe
     const o = await lockOrder(client, orderId);
     if (o.status === "open" || o.status === "cancelled") throw new Refused("発送してから記録してください。");
     const r = await client.query(
-      `UPDATE core.orders SET ship_notified_at = now(), ship_notified_by = $2 WHERE id = $1 AND ship_notified_at IS NULL`,
+      `UPDATE core.orders SET ship_notified_at = now(), ship_notified_by = $2, ship_notified_via = 'seller_central'
+        WHERE id = $1 AND ship_notified_at IS NULL`,
       [orderId, actorId],
     );
     if (r.rowCount !== 1) throw new Refused("出荷通知は、もう記録してあります。");
@@ -335,7 +336,7 @@ export async function createOrderTask(
   const label = items.map((i) => `${i.skuCode} × ${i.qty}`).join("・");
   return createTask(client, actor, {
     title: `自社出荷：${orderNo}（${label}）を出荷する`,
-    description: "出荷待ちの個体を結びつけ → 送り状番号を入れて発送 → セラーセントラルで出荷通知",
+    description: "出荷待ちの個体を結びつけ → 送り状番号を入れて発送 → 中身を確かめて Amazon に出荷通知を送る",
     roleCode: "factory_manager",
     sourceKind: "system",
     sourceRef: `order:${orderId}`,
