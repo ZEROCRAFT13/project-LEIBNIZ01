@@ -10,7 +10,8 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY app/ ./
-RUN npm run build
+# public/ は中身が無いと git に入らない。無くても下の COPY が通るように作っておく
+RUN mkdir -p public && npm run build
 
 FROM node:22.22.0-slim AS run
 WORKDIR /app
