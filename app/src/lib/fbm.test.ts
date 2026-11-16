@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startUnit } from "@/lib/assembly";
 import { getPool, query } from "@/lib/db";
+import { todayJst } from "@/lib/format";
 import { addUnitToShipment, createFbaShipment } from "@/lib/fba";
 import {
   cancelFbmOrder,
@@ -47,10 +48,14 @@ afterAll(async () => {
   await getPool().end();
 });
 
+// 出荷期限は今日（日本時間）から7日後。固定の日付だと、その日を過ぎたとき
+// 「出荷する」タスクが期限超過になり、遅れた理由なしでは完了できずにテストが落ちる。
+const SHIP_BY = todayJst(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+
 const input = (orderNo: string, qty = 2) => ({
   orderNo,
   orderedAt: new Date(),
-  shipBy: "2026-11-03",
+  shipBy: SHIP_BY,
   skuId: r7,
   qty,
   totalAmount: 349800 * qty,
@@ -72,7 +77,7 @@ describe("注文の登録", () => {
     expect(r).toMatchObject({ ok: true });
     order = (r as { id: number }).id;
     const d = await getFbmOrder(order);
-    expect(d).toMatchObject({ status: "open", qty: 2, linked: 0, totalAmount: 699600, shipBy: "2026-11-03" });
+    expect(d).toMatchObject({ status: "open", qty: 2, linked: 0, totalAmount: 699600, shipBy: SHIP_BY });
     expect(d?.lines).toEqual([{ skuId: r7, skuCode: "ZB-G5070-R7", skuName: expect.any(String), qty: 2, unitPrice: 349800 }]);
     expect(d?.candidates.map((c) => c.mgmtNo)).toEqual(expect.arrayContaining(u));
     expect(d?.candidates.map((c) => c.mgmtNo)).not.toContain(inFba);
