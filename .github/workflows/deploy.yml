@@ -49,6 +49,8 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci --prefix app --no-audit --no-fund
+      - name: バックアップのテストで使う age を入れる
+        run: sudo apt-get install -y --no-install-recommends age
       - run: npm run db:test
       - run: npm test
       - run: npm run lint
@@ -63,6 +65,9 @@ jobs:
       REGION: asia-northeast1
       TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'staging' }}
       IMAGE: asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/zerobit/app:${{ github.sha }}
+      BACKUP_IMAGE: asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/zerobit/backup:${{ github.sha }}
+      # バックアップは infra/setup.sh で大阪の置き場所を作り、Variables に ZB_BACKUP_BUCKET・GCP_BACKUP_SA を入れてから動く
+      BACKUP_ON: ${{ vars.ZB_BACKUP_BUCKET != '' && vars.GCP_BACKUP_SA != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
@@ -76,6 +81,10 @@ jobs:
           gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
           docker build --build-arg ZB_VERSION="${GITHUB_SHA::7}" -t "$IMAGE" .
           docker push "$IMAGE"
+          if [ "$BACKUP_ON" = true ]; then
+            docker build --build-arg ZB_VERSION="${GITHUB_SHA::7}" --target backup -t "$BACKUP_IMAGE" .
+            docker push "$BACKUP_IMAGE"
+          fi
 
       - name: 本番は、反映の前にデータベースのバックアップを取る
         if: env.TARGET == 'production'
@@ -83,9 +92,11 @@ jobs:
 
       - name: マイグレーション（まだ流していないものだけ）
         run: |
+          MIGRATE_SECRETS="DATABASE_URL_ADMIN=db-admin-url:latest,ZB_APP_PASSWORD=zb-app-password:latest"
+          [ "$BACKUP_ON" = true ] && MIGRATE_SECRETS="$MIGRATE_SECRETS,ZB_BACKUP_PASSWORD=zb-backup-password:latest"
           gcloud run jobs deploy zerobit-migrate --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" --image="$IMAGE" \
             --service-account="${{ vars.GCP_MIGRATE_SA }}" --set-cloudsql-instances="${{ vars.GCP_SQL_CONNECTION }}" \
-            --set-secrets="DATABASE_URL_ADMIN=db-admin-url:latest,ZB_APP_PASSWORD=zb-app-password:latest" \
+            --set-secrets="$MIGRATE_SECRETS" \
             --command=node --args=scripts/migrate.mjs --max-retries=0 --task-timeout=600s
           gcloud run jobs execute zerobit-migrate --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" --wait
 
@@ -100,7 +111,20 @@ jobs:
             --ingress=internal-and-cloud-load-balancing --no-invoker-iam-check \
             --cpu=1 --memory=1Gi --min-instances=0 --max-instances=3 --timeout=300 \
             --set-secrets="$SECRETS" \
-            --set-env-vars="APP_URL=https://${{ vars.ZB_DOMAIN }},ZB_PUBLIC_URL=https://${{ vars.ZB_DOMAIN }},AUTH_ALLOWED_DOMAIN=${{ vars.AUTH_ALLOWED_DOMAIN }},ZB_STORAGE_BUCKET=${{ vars.ZB_STORAGE_BUCKET }}"
+            --set-env-vars="APP_URL=https://${{ vars.ZB_DOMAIN }},ZB_PUBLIC_URL=https://${{ vars.ZB_DOMAIN }},AUTH_ALLOWED_DOMAIN=${{ vars.AUTH_ALLOWED_DOMAIN }},ZB_STORAGE_BUCKET=${{ vars.ZB_STORAGE_BUCKET }},ZB_BACKUP_EXPECTED=$([ "$BACKUP_ON" = true ] && echo 1 || echo 0)"
+
+      - name: バックアップのジョブ（1時間ごとに Cloud Scheduler が動かす）
+        if: env.BACKUP_ON == 'true'
+        run: |
+          gcloud run jobs deploy zerobit-backup --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" --image="$BACKUP_IMAGE" \
+            --service-account="${{ vars.GCP_BACKUP_SA }}" --set-cloudsql-instances="${{ vars.GCP_SQL_CONNECTION }}" \
+            --set-secrets="DATABASE_URL_BACKUP=db-backup-url:latest,ZB_BACKUP_RECIPIENT=backup-age-recipient:latest" \
+            --set-env-vars="ZB_BACKUP_BUCKET=${{ vars.ZB_BACKUP_BUCKET }},ZB_ENV=$TARGET" \
+            --cpu=1 --memory=2Gi --max-retries=1 --task-timeout=1800s
+          gcloud run jobs add-iam-policy-binding zerobit-backup --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" \
+            --member="serviceAccount:${{ vars.GCP_BACKUP_SA }}" --role=roles/run.invoker >/dev/null
+          # 反映のたびに1回とって、新しいイメージで本当にとれることを確かめる
+          gcloud run jobs execute zerobit-backup --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" --wait
 
       - name: 動いているか確かめる
         if: vars.ZB_SMOKE_TEST != 'off'

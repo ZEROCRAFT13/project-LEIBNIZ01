@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { AmazonSyncAlert } from "@/components/amazon-sync-status";
+import { BackupAlert } from "@/components/backup-alert";
 import { Loading } from "@/components/ui";
 import { countOpenTasks } from "@/lib/tasks";
 import { canAssemble, canDocuments, canInspect, canManage, canPurchase, requireUser } from "@/lib/auth/session";
@@ -94,6 +95,7 @@ async function Menu({ searchParams }: { searchParams: PageProps<"/">["searchPara
         </p>
       )}
       <AmazonSyncAlert />
+      {canManage(viewer) && <BackupAlert />}
       <Link
         href="/todo"
         className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border-2 px-5 py-4 ${

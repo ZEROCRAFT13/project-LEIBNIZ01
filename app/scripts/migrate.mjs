@@ -1,6 +1,7 @@
 // 本番・検証環境のデータベースに、まだ流していないマイグレーションだけを流す（足すだけ。作り直さない）。
 //   node app/scripts/migrate.mjs            （接続先は DATABASE_URL_ADMIN。管理者＝postgres で接続する）
 //   ZB_APP_PASSWORD があれば、アプリ用のロール zb_app のパスワードもそれにする
+//   ZB_BACKUP_PASSWORD があれば、バックアップ用のロール zb_backup をログインできるようにして、パスワードをそれにする
 // 流したファイルは public.schema_migrations に名前と中身のハッシュ（sha256）を残す。
 // すでに流したファイルの中身が変わっていたら、何もせずに止める（既存のマイグレーションは書き換えない：ルール8）。
 // 1つのファイルは1つのトランザクションで流し、記録も同じトランザクションで書く（途中で落ちても半端にならない）。
@@ -38,7 +39,12 @@ export function listMigrations(directory = dir) {
     });
 }
 
-export async function migrate({ url = process.env.DATABASE_URL_ADMIN, appPassword = process.env.ZB_APP_PASSWORD, log = console.log } = {}) {
+export async function migrate({
+  url = process.env.DATABASE_URL_ADMIN,
+  appPassword = process.env.ZB_APP_PASSWORD,
+  backupPassword = process.env.ZB_BACKUP_PASSWORD,
+  log = console.log,
+} = {}) {
   if (!url) throw new Error('DATABASE_URL_ADMIN（管理者で接続する先）がありません');
   if (!dir) throw new Error('db/migrations が見つかりません');
   const client = new pg.Client({ connectionString: url });
@@ -74,6 +80,9 @@ export async function migrate({ url = process.env.DATABASE_URL_ADMIN, appPasswor
     }
     if (appPassword) {
       await client.query(`ALTER ROLE zb_app WITH LOGIN PASSWORD ${client.escapeLiteral(appPassword)}`);
+    }
+    if (backupPassword) {
+      await client.query(`ALTER ROLE zb_backup WITH LOGIN PASSWORD ${client.escapeLiteral(backupPassword)}`);
     }
     log(`✓ マイグレーション：${applied}件を流しました（全部で ${files.length}件）`);
     return { applied, total: files.length };
