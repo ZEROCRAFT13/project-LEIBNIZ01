@@ -7,6 +7,7 @@ import {
   infoAction,
   linkUnitAction,
   notifiedAction,
+  sendShipNoticeAction,
   shipAction,
   syncNowAction,
   trackingAction,
@@ -315,6 +316,34 @@ export function NotifiedButton({ orderId, overdue }: { orderId: number; overdue:
       )}
       <button type="submit" disabled={pending} className={buttonClass}>
         セラーセントラルで出荷通知をした
+      </button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+/** 中身を確かめて（承認して）、Amazon に出荷通知を送る */
+export function SendShipNoticeButton({ orderId, overdue, disabled }: { orderId: number; overdue: boolean; disabled: boolean }) {
+  const [state, action, pending] = useActionState<FbmState, FormData>(sendShipNoticeAction, null);
+  const [reason, setReason] = useState("");
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="orderId" value={orderId} />
+      {overdue && (
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          出荷期限を過ぎました。遅れた理由
+          <input
+            name="delayReason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={200}
+            placeholder="例：部品の入荷待ちで組立が遅れた"
+            className={inputClass}
+          />
+        </label>
+      )}
+      <button type="submit" disabled={pending || disabled} className={buttonClass}>
+        {pending ? "Amazon に送っています…" : "この内容で Amazon に出荷通知を送る（承認）"}
       </button>
       <Message state={state} />
     </form>

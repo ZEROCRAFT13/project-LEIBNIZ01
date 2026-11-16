@@ -4,7 +4,7 @@ import { JP_MARKETPLACE_ID, type ApiOrder } from "@/lib/amazon/orders-map";
 // SP-API への接続（Login with Amazon でアクセストークンを取り、日本＝極東の窓口に問い合わせる）。
 // キーは環境変数（ローカルは app/.env.local、本番は Secret Manager）から読む。コードやログには書かない（ルール9）。
 // 応答の本文はログに出さない（注文の中身が入るため）。失敗したときは HTTP の番号とエラーの種類だけを返す。
-// ここからは読むだけ。Amazon に何かを送る操作（出荷通知・出品数）は、承認の仕組みと一緒に別に作る（ルール4）。
+// Amazon に何かを送る操作（出荷通知）は、人が中身を見て承認したあとにだけ呼ぶ（呼ぶ側は lib/fbm-ship.ts。ルール4）。
 
 const LWA_TOKEN_URL = "https://api.amazon.com/auth/o2/token";
 const FE_ENDPOINT = "https://sellingpartnerapi-fe.amazon.com";
@@ -36,6 +36,24 @@ export type OrdersApi = {
   searchOrders(params: { lastUpdatedAfter?: Date; createdAfter?: Date; merchantOnly: boolean }): Promise<ApiOrder[]>;
 };
 
+/** 出荷通知の1箱分（Orders API v0 confirmShipment の packageDetail） */
+export type ShipConfirmPackage = {
+  packageReferenceId: string;
+  carrierCode: string;
+  carrierName?: string;
+  trackingNumber: string;
+  /** ISO 8601 */
+  shipDate: string;
+  orderItems: { orderItemId: string; quantity: number }[];
+};
+
+export type ShipConfirmApi = {
+  /** 1件の注文（明細の orderItemId を知るため）。ない注文なら null */
+  getOrder(orderNo: string): Promise<ApiOrder | null>;
+  /** 1箱分の出荷通知を送る。同じ packageReferenceId で送り直すと、Amazon 側の内容が直る */
+  confirmShipment(orderNo: string, pkg: ShipConfirmPackage): Promise<void>;
+};
+
 type Fetch = typeof fetch;
 
 /** エラーの応答から、種類（code）だけを取る。本文の中身は使わない */
@@ -51,9 +69,13 @@ async function errorCode(res: Response): Promise<string | null> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export function createSpApi(config: SpApiConfig, deps: { fetch?: Fetch; sleep?: (ms: number) => Promise<void> } = {}): OrdersApi & {
-  getAccessToken(): Promise<string>;
-} {
+export function createSpApi(
+  config: SpApiConfig,
+  deps: { fetch?: Fetch; sleep?: (ms: number) => Promise<void> } = {},
+): OrdersApi &
+  ShipConfirmApi & {
+    getAccessToken(): Promise<string>;
+  } {
   const doFetch = deps.fetch ?? fetch;
   const wait = deps.sleep ?? sleep;
   let token: { value: string; expiresAt: number } | null = null;
@@ -95,14 +117,32 @@ export function createSpApi(config: SpApiConfig, deps: { fetch?: Fetch; sleep?: 
     return token.value;
   }
 
-  /** GET。混み合い（429）と一時的な失敗（5xx）は、間をあけて3回までやり直す */
-  async function get(path: string, query: URLSearchParams): Promise<unknown> {
+  /**
+   * 問い合わせる。混み合い（429）と一時的な失敗（5xx）は、間をあけて3回までやり直す
+   * （送る操作の出荷通知も、同じ packageReferenceId なら何度送っても同じ結果になるので、やり直してよい）。
+   * notFoundOk なら 404 は null を返す
+   */
+  async function request(
+    method: "GET" | "POST",
+    path: string,
+    query: URLSearchParams | null,
+    body?: unknown,
+    notFoundOk = false,
+  ): Promise<unknown> {
     for (let attempt = 0; ; attempt++) {
-      const res = await call(`${config.endpoint}${path}?${query.toString()}`, {
-        headers: { "x-amz-access-token": await getAccessToken(), "user-agent": USER_AGENT, accept: "application/json" },
+      const res = await call(`${config.endpoint}${path}${query ? `?${query.toString()}` : ""}`, {
+        method,
+        headers: {
+          "x-amz-access-token": await getAccessToken(),
+          "user-agent": USER_AGENT,
+          accept: "application/json",
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(30_000),
       });
-      if (res.ok) return res.json();
+      if (res.ok) return res.status === 204 ? null : res.json().catch(() => null);
+      if (notFoundOk && res.status === 404) return null;
       if ((res.status === 429 || res.status >= 500) && attempt < 3) {
         await wait(2000 * 2 ** attempt);
         continue;
@@ -114,9 +154,11 @@ export function createSpApi(config: SpApiConfig, deps: { fetch?: Fetch; sleep?: 
           : res.status === 429
             ? "問い合わせが多すぎます。少し待ってからやり直してください。"
             : "";
-      throw new SpApiError(`Amazon への問い合わせに失敗しました（${res.status}${code ? ` ${code}` : ""}）。${hint}`, res.status, code);
+      const what = method === "GET" ? "問い合わせ" : "送信";
+      throw new SpApiError(`Amazon への${what}に失敗しました（${res.status}${code ? ` ${code}` : ""}）。${hint}`, res.status, code);
     }
   }
+  const get = (path: string, query: URLSearchParams) => request("GET", path, query);
 
   return {
     getAccessToken,
@@ -135,6 +177,20 @@ export function createSpApi(config: SpApiConfig, deps: { fetch?: Fetch; sleep?: 
         if (!next) return out;
       }
       throw new SpApiError("注文のページが多すぎます（5,000件を超えました）。期間を短くしてください。", null, null);
+    },
+    async getOrder(orderNo) {
+      if (!/^\d{3}-\d{7}-\d{7}$/.test(orderNo)) throw new SpApiError("注文番号の形がちがいます。", null, null);
+      const q = new URLSearchParams({ includedData: "FULFILLMENT" });
+      const body = (await request("GET", `/orders/2026-01-01/orders/${orderNo}`, q, undefined, true)) as { order?: ApiOrder } | null;
+      return body?.order ?? null;
+    },
+    async confirmShipment(orderNo, pkg) {
+      if (!/^\d{3}-\d{7}-\d{7}$/.test(orderNo)) throw new SpApiError("注文番号の形がちがいます。", null, null);
+      // 出荷通知は Orders API v0 にだけある（v2026-01-01 にはない。v0 のうち廃止が決まっているのは読む操作だけ）
+      await request("POST", `/orders/v0/orders/${orderNo}/shipmentConfirmation`, null, {
+        marketplaceId: JP_MARKETPLACE_ID,
+        packageDetail: pkg,
+      });
     },
   };
 }

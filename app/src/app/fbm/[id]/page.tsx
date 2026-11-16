@@ -7,6 +7,7 @@ import {
   LinkCandidateButton,
   LinkUnitForm,
   NotifiedButton,
+  SendShipNoticeButton,
   ShipControls,
   TrackingForm,
   UnlinkButton,
@@ -15,6 +16,8 @@ import { Card, Loading, Tag } from "@/components/ui";
 import { requireManager } from "@/lib/auth/session";
 import { fbmStatusLabel, missingForFbmShip } from "@/lib/fbm-calc";
 import { getFbmOrder } from "@/lib/fbm";
+import { getShipNoticePreview, type ShipNoticePreview } from "@/lib/fbm-ship";
+import { spApiConfigFromEnv } from "@/lib/amazon/sp-api";
 import { yen, ymdHm } from "@/lib/format";
 import { carrierLabel, label, unitStatusLabel } from "@/lib/labels";
 
@@ -39,6 +42,7 @@ async function Order({ params }: { params: PageProps<"/fbm/[id]">["params"] }) {
   const o = /^\d{1,15}$/.test(id) ? await getFbmOrder(Number(id)) : null;
   if (!o) notFound();
   const open = o.status === "open";
+  const notice = o.status === "shipped" ? await getShipNoticePreview(o.id, spApiConfigFromEnv() !== null) : null;
 
   return (
     <>
@@ -152,17 +156,100 @@ async function Order({ params }: { params: PageProps<"/fbm/[id]">["params"] }) {
         </Card>
       )}
 
-      {o.status === "shipped" && !o.notifiedAt && (
+      {notice && !o.notifiedAt && (
         <Card title="Amazon への出荷通知">
-          <div className="flex flex-col gap-3 p-5">
-            <p className="text-sm text-stone-700">
-              セラーセントラルの注文管理で、この注文の「出荷通知を送信」を行い、運送会社と送り状番号（
-              {o.units.map((u) => u.trackingNo).join("、")}）を入れてください。終わったら下のボタンを押します。
-            </p>
-            <NotifiedButton orderId={o.id} overdue={o.daysLeft !== null && o.daysLeft < 0} />
-          </div>
+          <ShipNotice orderId={o.id} notice={notice} overdue={o.daysLeft !== null && o.daysLeft < 0} />
         </Card>
       )}
+      {notice && notice.history.length > 0 && <NoticeHistory notice={notice} />}
     </>
+  );
+}
+
+const AMAZON_STATUS: Record<string, string> = { approved: "送信中", sent: "送れた", failed: "送れなかった" };
+
+/** 送る中身を見せて、承認して送る。この画面から送れないときは、セラーセントラルで通知して記録する */
+function ShipNotice({ orderId, notice, overdue }: { orderId: number; notice: ShipNoticePreview; overdue: boolean }) {
+  const canSend = notice.blockers.length === 0;
+  return (
+    <div className="flex flex-col gap-4 p-5">
+      <p className="text-sm text-stone-700">
+        次の内容を Amazon に送ります。送り状番号と個体が合っているか確かめてから、ボタンを押してください（押した人が承認した人として残ります）。
+      </p>
+      <dl className="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-1 text-sm">
+        <dt className="text-stone-600">注文番号</dt>
+        <dd className="font-mono">{notice.orderNo}</dd>
+        <dt className="text-stone-600">運送会社</dt>
+        <dd>
+          {notice.carrier ? carrierLabel[notice.carrier] : "—"}
+          {notice.carrierCode && <span className="ml-2 font-mono text-stone-600">（{notice.carrierCode}）</span>}
+        </dd>
+        <dt className="text-stone-600">発送日時</dt>
+        <dd>{notice.shippedAt ? ymdHm(notice.shippedAt) : "—"}</dd>
+      </dl>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-stone-300 text-left text-stone-600">
+            <th className="py-1 pr-3 font-medium">箱</th>
+            <th className="py-1 pr-3 font-medium">送り状番号</th>
+            <th className="py-1 font-medium">入っている個体</th>
+          </tr>
+        </thead>
+        <tbody>
+          {notice.boxes.map((b, i) => (
+            <tr key={b.trackingNo} className="border-b border-stone-100 last:border-0">
+              <td className="py-2 pr-3">{i + 1}</td>
+              <td className="py-2 pr-3 font-mono">{b.trackingNo}</td>
+              <td className="py-2 font-mono">
+                {b.mgmtNos.map((m, j) => (
+                  <span key={m} className="mr-3 inline-block">
+                    {m}（{b.skuCodes[j]}）
+                  </span>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {canSend ? (
+        <SendShipNoticeButton orderId={orderId} overdue={overdue} disabled={false} />
+      ) : (
+        <ul className="rounded-md bg-amber-100 px-4 py-3 text-sm text-amber-950">
+          {notice.blockers.map((b) => (
+            <li key={b}>{b}</li>
+          ))}
+        </ul>
+      )}
+      <details className="text-sm">
+        <summary className="cursor-pointer text-stone-700">セラーセントラルで通知した場合</summary>
+        <div className="mt-3 flex flex-col gap-2">
+          <p className="text-stone-700">
+            セラーセントラルの注文管理で「出荷通知を送信」を行い、運送会社と送り状番号を入れたら、下のボタンで記録します。
+          </p>
+          <NotifiedButton orderId={orderId} overdue={overdue} />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function NoticeHistory({ notice }: { notice: ShipNoticePreview }) {
+  return (
+    <Card title="出荷通知の送信の記録">
+      <ul>
+        {notice.history.map((h) => (
+          <li key={h.id} className="flex flex-col gap-1 border-b border-stone-100 px-5 py-3 text-sm last:border-0">
+            <span className="flex flex-wrap items-center gap-x-3">
+              <Tag tone={h.status === "sent" ? "blue" : h.status === "failed" ? "red" : "amber"}>{AMAZON_STATUS[h.status]}</Tag>
+              <span>
+                {ymdHm(h.approvedAt)} 承認：{h.approvedBy}
+              </span>
+              {h.finishedAt && <span className="text-stone-600">終了 {ymdHm(h.finishedAt)}</span>}
+            </span>
+            {h.error && <span className="text-red-900">{h.error}</span>}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

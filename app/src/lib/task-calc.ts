@@ -62,6 +62,6 @@ export function orderNextStep(o: { qty: number; linked: number; shipped: boolean
     return { text: `個体を結びつける（あと ${need}台）`, warn: false };
   }
   if (!o.shipped) return { text: "送り状番号を入れて発送する", warn: false };
-  if (!o.notified) return { text: "セラーセントラルで出荷通知をする", warn: false };
+  if (!o.notified) return { text: "Amazon に出荷通知を送る", warn: false };
   return { text: "済み", warn: false };
 }
