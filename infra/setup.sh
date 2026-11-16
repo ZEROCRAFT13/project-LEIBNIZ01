@@ -160,9 +160,25 @@ ok "gs://$BACKUP_BUCKET（大阪。1時間ごと ${KEEP_HOURLY}日・日 ${KEEP_
 
 say "書類・写真のファイルを大阪へ写す（Storage Transfer Service・1時間ごと）"
 # 写すだけ（元にないものを消さない・同じ名前は上書きしない）。ファイルは中身のハッシュの名前なので、同じ名前なら同じ中身
-STS_SA=$(curl -fsS -H "Authorization: Bearer $(gcloud auth print-access-token)" \
-  "https://storagetransfer.googleapis.com/v1/googleServiceAccounts/${PROJECT}" |
-  python3 -c 'import json,sys; print(json.load(sys.stdin)["accountEmail"])')
+# 転送サービスのアカウント（Google が作る）を調べる。API を有効にした直後は数分使えないことがあるので、待って試し直す
+STS_SA=""
+for i in $(seq 1 12); do
+  STS_JSON=$(curl -sS -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "x-goog-user-project: ${PROJECT}" \
+    "https://storagetransfer.googleapis.com/v1/googleServiceAccounts/${PROJECT}" || true)
+  STS_SA=$(printf '%s' "$STS_JSON" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("accountEmail", ""))
+except Exception: print("")')
+  [[ -n "$STS_SA" ]] && break
+  echo "  …転送サービスの準備を待っています（${i}/12）"
+  sleep 15
+done
+if [[ -z "$STS_SA" ]]; then
+  echo "  ✗ 転送サービスのアカウントを調べられませんでした。数分おいて、もう一度 setup.sh を動かしてください"
+  printf '%s' "$STS_JSON" | python3 -c 'import json,sys
+try: print("    （" + json.load(sys.stdin)["error"]["message"][:200] + "）")
+except Exception: pass'
+  exit 1
+fi
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$STS_SA" --role=roles/storage.objectViewer >/dev/null
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$STS_SA" --role=roles/storage.legacyBucketReader >/dev/null
 gcloud storage buckets add-iam-policy-binding "gs://$BACKUP_BUCKET" --member="serviceAccount:$STS_SA" --role=roles/storage.legacyBucketWriter >/dev/null
