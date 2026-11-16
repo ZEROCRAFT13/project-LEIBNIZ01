@@ -278,13 +278,17 @@ if [[ "$ENV_NAME" == prod ]]; then
   say "5分ごとの注文の取り込み（Cloud Scheduler）"
   JOB_SECRET=$(gcloud secrets versions access latest --secret=zb-job-secret)
   make_job() { # 名前 スケジュール モード
+    # 合言葉（Bearer）を入れる引数は、作るときは --headers、直すときは --update-headers（名前が違う）。
+    # 引数の間違いで gcloud が合言葉を画面に出さないよう、エラーの表示は捨てて、こちらの文だけを出す
     local args=(--location="$REGION" --schedule="$2" --time-zone="Asia/Tokyo" --http-method=POST
-      --uri="https://${DOMAIN}/api/jobs/amazon-orders?mode=$3" --headers="Authorization=Bearer ${JOB_SECRET}"
-      --attempt-deadline=300s)
+      --uri="https://${DOMAIN}/api/jobs/amazon-orders?mode=$3" --attempt-deadline=300s)
+    local header="Authorization=Bearer ${JOB_SECRET}"
     if gcloud scheduler jobs describe "$1" --location="$REGION" >/dev/null 2>&1; then
-      gcloud scheduler jobs update http "$1" "${args[@]}" >/dev/null
+      gcloud scheduler jobs update http "$1" "${args[@]}" --update-headers="$header" >/dev/null 2>&1 ||
+        { echo "  ✗ $1 を直せませんでした（gcloud scheduler jobs update http）"; exit 1; }
     else
-      gcloud scheduler jobs create http "$1" "${args[@]}" >/dev/null
+      gcloud scheduler jobs create http "$1" "${args[@]}" --headers="$header" >/dev/null 2>&1 ||
+        { echo "  ✗ $1 を作れませんでした（gcloud scheduler jobs create http）"; exit 1; }
     fi
   }
   make_job amazon-orders "*/5 * * * *" incremental
