@@ -229,6 +229,25 @@ printf %s '新しい値' | gcloud secrets versions add sp-api-client-secret --da
 
 そのあと Actions で本番を反映し直すと、新しい値が読まれます。SP-API のクライアントシークレットは**180日ごと**に替える決まりです。
 
+#### 定期の取り込みの合言葉（zb-job-secret）を替える
+
+Cloud Scheduler が注文の取り込みを呼ぶときの合言葉です。画面やチャットに出てしまったら、すぐ替えます。
+
+1. Cloud Shell で本番のプロジェクトを選び、新しい値を作って入れる（値は画面に出ません）
+   ```
+   gcloud config set project 本番のプロジェクトID
+   openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48 | gcloud secrets versions add zb-job-secret --data-file=-
+   ```
+2. Actions →「反映」→ `production` で反映し直す（画面が新しい合言葉を読む）
+3. `bash setup.sh prod 本番のプロジェクトID app.自社ドメイン` をもう一度動かす（Cloud Scheduler が新しい合言葉を使うようになる）
+4. 古い合言葉を使えなくする（`versions list` で一番新しいもの以外の番号を確かめて、`disable`）
+   ```
+   gcloud secrets versions list zb-job-secret
+   gcloud secrets versions disable 1 --secret=zb-job-secret
+   ```
+
+2と3の間の数分は、取り込みが失敗します（次の回で戻ります）。
+
 ### 書類の保存期間のロック
 
 本番のファイル置き場は「7年は消せない」設定にしてあります（`--retention-period=7y`）。運用が固まったら、取り消せないように**ロック**します（ロックすると期間を短くできなくなります）。
