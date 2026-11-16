@@ -97,7 +97,7 @@ jobs:
           fi
           gcloud run deploy zerobit --project="${{ vars.GCP_PROJECT_ID }}" --region="$REGION" --image="$IMAGE" \
             --service-account="${{ vars.GCP_RUN_SA }}" --add-cloudsql-instances="${{ vars.GCP_SQL_CONNECTION }}" \
-            --ingress=internal-and-cloud-load-balancing --allow-unauthenticated \
+            --ingress=internal-and-cloud-load-balancing --no-invoker-iam-check \
             --cpu=1 --memory=1Gi --min-instances=0 --max-instances=3 --timeout=300 \
             --set-secrets="$SECRETS" \
             --set-env-vars="APP_URL=https://${{ vars.ZB_DOMAIN }},ZB_PUBLIC_URL=https://${{ vars.ZB_DOMAIN }},AUTH_ALLOWED_DOMAIN=${{ vars.AUTH_ALLOWED_DOMAIN }},ZB_STORAGE_BUCKET=${{ vars.ZB_STORAGE_BUCKET }}"
