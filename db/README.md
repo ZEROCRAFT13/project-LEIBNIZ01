@@ -25,8 +25,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0017_task_rules.sql` | ToDo の決まり：発生元ごとに終わっていないタスクは1つ、タスクは消さない（取り消しに理由）、終わったタスクは書き換えない |
 | `migrations/0018_amazon_order_sync.sql` | SP-API の注文の取り込みの記録（integration_runs：成功・どこまで取ったか・件数だけ。消せない）。注文の出どころ（手で／SP-API）と Amazon 側の状態 |
 | `migrations/0019_db_backup.sql` | バックアップ専用のロール `zb_backup`（全部の区画を読むだけ。これから足す表も読める）。書けるのはバックアップの記録（integration_runs の `db_backup`）だけ |
+| `migrations/0020_restore_test.sql` | 毎月の復元の試験の記録（integration_runs の `restore_test`。戻したバックアップ・表の数・行数・合わなかった表の名前だけ） |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（205項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（207項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 本番・検証でのマイグレーション
 
