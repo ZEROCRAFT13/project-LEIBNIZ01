@@ -9,6 +9,7 @@ import {
   removeUnitAction,
   shipAction,
   trackingAction,
+  syncFbaNowAction,
   type FbaState,
 } from "@/app/fba/actions";
 import { carrierLabel } from "@/lib/labels";
@@ -307,6 +308,23 @@ export function ReceiptsForm({
       </p>
       <button type="submit" disabled={pending} className={buttonClass}>
         受領数を保存
+      </button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+/** Amazon から FBA の在庫と販売を今すぐ取り込む */
+export function SyncFbaButton({ disabled }: { disabled: boolean }) {
+  const [state, action, pending] = useActionState<FbaState, FormData>(syncFbaNowAction, null);
+  return (
+    <form action={action} className="flex flex-col items-end gap-2">
+      <button
+        type="submit"
+        disabled={pending || disabled}
+        className="h-11 rounded-md border border-blue-800 px-4 font-bold text-blue-800 disabled:opacity-60"
+      >
+        {pending ? "取り込んでいます…" : "Amazon から今すぐ取り込む"}
       </button>
       <Message state={state} />
     </form>

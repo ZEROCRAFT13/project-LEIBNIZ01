@@ -48,7 +48,14 @@ const emptySummary = (): SyncSummary => ({
 });
 
 /** 知らせの ToDo を、発生元ごとに1つだけ作る（もうあれば何もしない） */
-async function notifyOnce(client: PoolClient, ref: string, title: string, description: string, role = "factory_manager", dueAt: Date | null = null) {
+export async function notifyOnce(
+  client: PoolClient,
+  ref: string,
+  title: string,
+  description: string,
+  role = "factory_manager",
+  dueAt: Date | null = null,
+) {
   if (await findOpenTask(client, "system", ref)) return;
   await createTask(client, SYSTEM, { title, description, roleCode: role, sourceKind: "system", sourceRef: ref, dueAt });
 }

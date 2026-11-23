@@ -36,6 +36,32 @@ export type OrdersApi = {
   searchOrders(params: { lastUpdatedAfter?: Date; createdAfter?: Date; merchantOnly: boolean }): Promise<ApiOrder[]>;
 };
 
+/** FBA の在庫（FBA Inventory API の inventorySummaries のうち、使う所だけ） */
+export type FbaInventoryItem = {
+  sellerSku?: string;
+  fnSku?: string;
+  totalQuantity?: number;
+  lastUpdatedTime?: string;
+  inventoryDetails?: {
+    fulfillableQuantity?: number;
+    inboundWorkingQuantity?: number;
+    inboundShippedQuantity?: number;
+    inboundReceivingQuantity?: number;
+    reservedQuantity?: {
+      totalReservedQuantity?: number;
+      pendingCustomerOrderQuantity?: number;
+      pendingTransshipmentQuantity?: number;
+      fcProcessingQuantity?: number;
+    };
+    unfulfillableQuantity?: { totalUnfulfillableQuantity?: number };
+  };
+};
+
+export type FbaInventoryApi = {
+  /** 日本の FBA の在庫を全部（ページをたどる） */
+  getFbaInventory(): Promise<FbaInventoryItem[]>;
+};
+
 /** 出荷通知の1箱分（Orders API v0 confirmShipment の packageDetail） */
 export type ShipConfirmPackage = {
   packageReferenceId: string;
@@ -73,7 +99,8 @@ export function createSpApi(
   config: SpApiConfig,
   deps: { fetch?: Fetch; sleep?: (ms: number) => Promise<void> } = {},
 ): OrdersApi &
-  ShipConfirmApi & {
+  ShipConfirmApi &
+  FbaInventoryApi & {
     getAccessToken(): Promise<string>;
   } {
   const doFetch = deps.fetch ?? fetch;
@@ -177,6 +204,27 @@ export function createSpApi(
         if (!next) return out;
       }
       throw new SpApiError("注文のページが多すぎます（5,000件を超えました）。期間を短くしてください。", null, null);
+    },
+    async getFbaInventory() {
+      const out: FbaInventoryItem[] = [];
+      let next: string | undefined;
+      for (let page = 0; page < 50; page++) {
+        const q = new URLSearchParams({
+          details: "true",
+          granularityType: "Marketplace",
+          granularityId: JP_MARKETPLACE_ID,
+          marketplaceIds: JP_MARKETPLACE_ID,
+        });
+        if (next) q.set("nextToken", next);
+        const body = (await get("/fba/inventory/v1/summaries", q)) as {
+          payload?: { inventorySummaries?: FbaInventoryItem[] };
+          pagination?: { nextToken?: string };
+        };
+        out.push(...(body.payload?.inventorySummaries ?? []));
+        next = body.pagination?.nextToken;
+        if (!next) return out;
+      }
+      throw new SpApiError("FBA の在庫のページが多すぎます。", null, null);
     },
     async getOrder(orderNo) {
       if (!/^\d{3}-\d{7}-\d{7}$/.test(orderNo)) throw new SpApiError("注文番号の形がちがいます。", null, null);

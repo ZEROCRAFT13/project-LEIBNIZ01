@@ -3,17 +3,26 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { Card, Loading, Tag } from "@/components/ui";
 import { requireManager } from "@/lib/auth/session";
+import { SyncFbaButton } from "@/components/fba/forms";
+import { getFbaSyncHealth } from "@/lib/amazon/fba-sync";
+import { spApiConfigFromEnv } from "@/lib/amazon/sp-api";
 import { fbaStatusLabel } from "@/lib/fba-calc";
+import type { RestockLevel } from "@/lib/fba-restock-calc";
+import { getRestockRows } from "@/lib/fba-restock";
 import { listFbaShipments, listReadyForFba } from "@/lib/fba";
-import { ymd } from "@/lib/format";
+import { ymd, ymdHm } from "@/lib/format";
 import { createShipmentAction } from "./actions";
 
-export const metadata: Metadata = { title: "FBA 納品 | ZERO-BIT" };
+export const metadata: Metadata = { title: "FBA | ZERO-BIT" };
 
 export default function FbaPage() {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-5 px-4 py-8 sm:px-6">
-      <h1 className="text-2xl font-bold">FBA 納品</h1>
+      <h1 className="text-2xl font-bold">FBA</h1>
+      <Suspense fallback={<Loading />}>
+        <Restock />
+      </Suspense>
+      <h2 className="mt-2 text-xl font-bold">FBA 納品</h2>
       <p className="text-sm text-stone-600">
         セラーセントラルで納品プランを作り、ここでは「どの個体をどの納品で送ったか」を記録します（Amazon には何も送りません）。
       </p>
@@ -83,5 +92,80 @@ async function Shipments() {
         )}
       </Card>
     </>
+  );
+}
+
+const levelTag: Record<RestockLevel, { tone: "red" | "amber" | "green" | "gray"; text: string }> = {
+  late: { tone: "red", text: "今すぐ組立" },
+  soon: { tone: "amber", text: "もうすぐ" },
+  ok: { tone: "green", text: "まだ先" },
+  no_sales: { tone: "gray", text: "売れていない" },
+};
+
+/** FBA の在庫と、組立を始める期限 */
+async function Restock() {
+  await requireManager("/fba");
+  const configured = spApiConfigFromEnv() !== null;
+  const [{ settings, rows }, health] = await Promise.all([getRestockRows(), getFbaSyncHealth(configured)]);
+  return (
+    <Card
+      title="FBA の在庫と、組立を始める期限"
+      aside={health.lastSuccessAt ? `取り込み ${ymdHm(health.lastSuccessAt)}` : "まだ取り込んでいません"}
+    >
+      <div className="flex flex-col gap-3 px-5 py-4">
+        <p className="text-sm text-stone-600">
+          直近{settings.windowDays}日の販売ペースで、FBA の在庫（入庫中を含む）がなくなる日から、組立から受領までの{settings.leadDays}
+          日を引いた日が「組立を始める期限」です。補充の目安は、受領してから{settings.coverDays}日分売れる台数に足りない数です（日数は設定で変えられます）。
+        </p>
+        {health.stale && (
+          <p role="alert" className="rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-950">
+            取り込みが2時間以上成功していません。数字が古いかもしれません。{health.lastError ? `最後のエラー：${health.lastError}` : ""}
+          </p>
+        )}
+        {rows.length === 0 ? (
+          <p className="text-sm text-stone-600">FBA（または両方）の機種がありません。設定の「機種と構成表」で出荷方法と出品を登録してください。</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[44rem] text-sm">
+              <thead>
+                <tr className="border-b border-stone-300 text-left text-stone-600">
+                  <th className="py-1 pr-3 font-medium">機種</th>
+                  <th className="py-1 pr-3 text-right font-medium">販売可能</th>
+                  <th className="py-1 pr-3 text-right font-medium">入庫中</th>
+                  <th className="py-1 pr-3 text-right font-medium">1日</th>
+                  <th className="py-1 pr-3 font-medium">なくなる日</th>
+                  <th className="py-1 pr-3 font-medium">組立を始める期限</th>
+                  <th className="py-1 pr-3 text-right font-medium">補充の目安</th>
+                  <th className="py-1 text-right font-medium">出荷待ち</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.skuId} className="border-b border-stone-100 last:border-0">
+                    <td className="py-2 pr-3">
+                      <span className="font-mono">{r.skuCode}</span>
+                      {r.fulfillment === "both" && <span className="ml-1 text-xs text-stone-600">（両方）</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-right">{r.capturedAt ? r.fulfillable : "—"}</td>
+                    <td className="py-2 pr-3 text-right">{r.capturedAt ? r.inbound : "—"}</td>
+                    <td className="py-2 pr-3 text-right">{r.perDay.toFixed(2)}台</td>
+                    <td className="py-2 pr-3">{r.stockoutDate ?? "—"}</td>
+                    <td className="py-2 pr-3">
+                      <span className="flex items-center gap-2">
+                        {r.startBy ?? "—"}
+                        <Tag tone={levelTag[r.level].tone}>{levelTag[r.level].text}</Tag>
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-right font-bold">{r.suggestQty > 0 ? `${r.suggestQty}台` : "—"}</td>
+                    <td className="py-2 text-right">{r.readyHere}台</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <SyncFbaButton disabled={!configured} />
+      </div>
+    </Card>
   );
 }

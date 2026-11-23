@@ -94,7 +94,7 @@ npm run dev          # http://localhost:3000 で画面が開く
    SP_API_CLIENT_SECRET=…
    SP_API_REFRESH_TOKEN=Atzr|…
    ```
-3. `npm run amazon:check` … つながるか確かめる。直近30日の自社出荷の注文の**件数だけ**を表示する（中身は出さない）
+3. `npm run amazon:check` … つながるか確かめる。直近30日の自社出荷の注文の**件数だけ**と、FBA の在庫の出品数・販売できる数の合計を表示する（中身は出さない）
 4. `npm run amazon:watch` … 5分ごとに自社出荷の注文を取り込み、1日1回照合する。本番の定期実行（Cloud Scheduler が `/api/jobs/amazon-orders` を呼ぶ）ができるまでは、事務所の PC でこれを動かしておく
 
 - 取り込んだ注文は「自社出荷」に入り、ToDo に「出荷する」ができる。お客様の名前・住所は取らない

@@ -1,5 +1,5 @@
 // SP-API のコマンド（事務所の PC で、app/.env.local のキーを使って動かす）。
-//   npm run amazon:check      … つながるか確かめる。直近30日の自社出荷の注文の「件数」だけを表示する（中身は出さない）
+//   npm run amazon:check      … つながるか確かめる。直近30日の自社出荷の注文の「件数」と、FBA の在庫の行数・合計だけを表示する（中身は出さない）
 //   npm run amazon:sync       … 取り込みを1回動かす（前回の続きから）
 //   npm run amazon:reconcile  … 直近7日を見直して取り込む
 //   npm run amazon:watch      … 5分ごとに取り込み、1日1回照合する（本番の定期実行ができるまで、事務所の PC で動かしておく）
@@ -8,6 +8,7 @@ import { mapOrder } from "@/lib/amazon/orders-map";
 import { syncAmazonOrders } from "@/lib/amazon/order-sync";
 import { createSpApi, SpApiError, spApiConfigFromEnv } from "@/lib/amazon/sp-api";
 import { getPool } from "@/lib/db";
+import { fbaQuantities } from "@/lib/fba-restock-calc";
 
 try {
   process.loadEnvFile(".env.local");
@@ -33,6 +34,13 @@ async function main(cmd: string | undefined): Promise<number> {
     console.log(`✓ 直近30日の自社出荷の注文：${orders.length}件`, by);
     const bad = mapped.filter((m) => !m.ok).length;
     if (bad > 0) console.log(`！ 読めなかった注文：${bad}件（取り込むときに ToDo で知らせます）`);
+    try {
+      const inv = await api.getFbaInventory();
+      const sum = inv.reduce((n, i) => n + fbaQuantities(i).fulfillable, 0);
+      console.log(`✓ FBA の在庫：${inv.length}件の出品、販売できる数の合計 ${sum}台`);
+    } catch (e) {
+      console.log(`！ FBA の在庫を読めませんでした（${e instanceof SpApiError ? e.message : "不明なエラー"}）。アプリの役割に「Amazonから発送」があるか確かめてください`);
+    }
     return 0;
   }
   if (cmd === "sync" || cmd === "reconcile") {

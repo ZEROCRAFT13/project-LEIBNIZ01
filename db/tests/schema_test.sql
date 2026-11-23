@@ -236,9 +236,9 @@ INSERT INTO core.sku_daily_metrics (metric_date, sku_id, channel, units_ordered)
 SELECT core.today_jst() - g, 1, 'amazon', CASE WHEN g % 7 = 0 THEN 0 ELSE 1 END
 FROM generate_series(0, 13) AS g;
 SELECT pg_temp.check(
-  (SELECT per_day = 0.86 AND days_left = 2.3 AND start_assembly_by = core.today_jst() + 2 - 5
+  (SELECT per_day = 0.86 AND days_left = 2.3 AND start_assembly_by = core.today_jst() + 2 - 10
      FROM core.v_fba_runway WHERE sku_code = 'ZB-G5070-R7'),
-  'FBA在庫: 1日0.86台、残り2.3日、組立開始の期限は3日前（すでに遅れ）');
+  'FBA在庫: 1日0.86台、残り2.3日、組立開始の期限は8日前（すでに遅れ。組立から受領まで10日：0022）');
 
 RESET ROLE;
 
@@ -960,5 +960,14 @@ SELECT pg_temp.check(
   (SELECT count(*) >= 1 FROM audit.log WHERE table_name = 'core.outbound_actions'),
   '外に出る操作の記録は監査ログにも残る');
 SELECT pg_temp.expect_error($$DELETE FROM core.outbound_actions$$, '管理者でも外に出る操作の記録は消せない');
+
+-- ---------- FBA の在庫と販売ペースの取り込み（0022_fba_inventory_sync） ----------
+SET ROLE zb_app;
+INSERT INTO core.integration_runs (kind, mode) VALUES ('amazon_fba', 'incremental');
+SELECT pg_temp.check(
+  (SELECT (value #>> '{}')::int = 10 FROM core.settings WHERE key = 'fba_lead_time_days')
+   AND (SELECT (value #>> '{}')::int = 30 FROM core.settings WHERE key = 'fba_cover_days'),
+  '組立から受領までは10日、補充は30日分を目安にする');
+RESET ROLE;
 
 \echo ALL TESTS PASSED
