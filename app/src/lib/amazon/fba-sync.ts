@@ -3,6 +3,7 @@ import { notifyOnce } from "@/lib/amazon/order-sync";
 import { yenFromMoney, type ApiOrder } from "@/lib/amazon/orders-map";
 import type { FbaInventoryApi, OrdersApi } from "@/lib/amazon/sp-api";
 import { query, withActor } from "@/lib/db";
+import { updateRestockTasks } from "@/lib/fba-restock";
 import { addDays, fbaQuantities } from "@/lib/fba-restock-calc";
 import { todayJst } from "@/lib/format";
 import { completeTask, findOpenTask, type Actor } from "@/lib/tasks";
@@ -14,6 +15,7 @@ import { completeTask, findOpenTask, type Actor } from "@/lib/tasks";
 //          sku_daily_metrics（channel = 'amazon'）の units_ordered・sales_amount をその期間について作り直す
 //   記録は件数だけ（注文番号やお客様の情報は残さない）。実行者は system（ルール7）
 // 失敗したら ToDo に出し、次に成功したら自動で閉じる。
+// 取り込めたら、組立を始める期限が近い機種を工場長の ToDo にする（lib/fba-restock.ts の updateRestockTasks）。
 
 const SYSTEM: Actor = { kind: "system" };
 const KIND = "amazon_fba";
@@ -26,6 +28,8 @@ export type FbaSyncSummary = {
   unitsSold: number;
   /** 登録されていない出品（セラー SKU）の数。在庫か注文があるもの */
   unknownListings: number;
+  /** 組立の ToDo（作った・期限を直した・閉じた） */
+  tasks?: { created: number; updated: number; closed: number };
 };
 export type FbaSyncResult = { ok: true; runId: number; summary: FbaSyncSummary } | { ok: false; runId: number | null; error: string };
 
@@ -147,6 +151,11 @@ export async function syncFbaInventory(
       const alarm = await findOpenTask(c, "system", "sync:amazon_fba");
       if (alarm) await completeTask(c, SYSTEM, alarm.id, null, { recoveredRunId: runId });
     });
+    try {
+      summary.tasks = await updateRestockTasks(now);
+    } catch {
+      // 取り込みはできている。ToDo は次の回（1時間後）にやり直す
+    }
     return { ok: true, runId, summary };
   } catch (error) {
     const message = (error instanceof Error ? error.message : "不明なエラー").slice(0, 300);

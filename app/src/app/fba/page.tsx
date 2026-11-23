@@ -114,7 +114,7 @@ async function Restock() {
     >
       <div className="flex flex-col gap-3 px-5 py-4">
         <p className="text-sm text-stone-600">
-          直近{settings.windowDays}日の販売ペースで、FBA の在庫（入庫中を含む）がなくなる日から、組立から受領までの{settings.leadDays}
+          直近{settings.windowDays}日の販売ペースで、FBA の在庫（入庫中と、ここで組立中・出荷待ちの個体を含む）がなくなる日から、組立から受領までの{settings.leadDays}
           日を引いた日が「組立を始める期限」です。補充の目安は、受領してから{settings.coverDays}日分売れる台数に足りない数です（日数は設定で変えられます）。
         </p>
         {health.stale && (
@@ -136,7 +136,7 @@ async function Restock() {
                   <th className="py-1 pr-3 font-medium">なくなる日</th>
                   <th className="py-1 pr-3 font-medium">組立を始める期限</th>
                   <th className="py-1 pr-3 text-right font-medium">補充の目安</th>
-                  <th className="py-1 text-right font-medium">出荷待ち</th>
+                  <th className="py-1 text-right font-medium">組立中・出荷待ち</th>
                 </tr>
               </thead>
               <tbody>
@@ -157,7 +157,7 @@ async function Restock() {
                       </span>
                     </td>
                     <td className="py-2 pr-3 text-right font-bold">{r.suggestQty > 0 ? `${r.suggestQty}台` : "—"}</td>
-                    <td className="py-2 text-right">{r.readyHere}台</td>
+                    <td className="py-2 text-right">{r.pipeline}台</td>
                   </tr>
                 ))}
               </tbody>
