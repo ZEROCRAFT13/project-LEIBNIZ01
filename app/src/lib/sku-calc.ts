@@ -95,7 +95,10 @@ export function neededListings(f: AmazonFulfillment | null): ("fba" | "fbm")[] {
 }
 
 export type ListingInput = { sellerSku: string; asin: string } | null;
-export type AmazonInput = { fulfillment: AmazonFulfillment | null; fba: ListingInput; fbm: ListingInput };
+export type FbmPlanInput = { policy: "stock" | "to_order"; stockTarget: number; maxToOrder: number };
+/** fbmPlan がなければ、自社出荷の作り方は変えない */
+export type AmazonInput = { fulfillment: AmazonFulfillment | null; fba: ListingInput; fbm: ListingInput; fbmPlan?: FbmPlanInput };
+export const DEFAULT_FBM_PLAN: FbmPlanInput = { policy: "stock", stockTarget: 1, maxToOrder: 2 };
 
 /** セラー SKU は半角にして前後の空白を取る（大文字・小文字はそのまま。Amazon に登録した通りに書く） */
 export function normalizeSellerSku(raw: string): string {
@@ -133,6 +136,26 @@ export function parseAmazonInput(raw: Record<string, unknown>): Parsed<AmazonInp
   if (fba && fbm && fba.sellerSku === fbm.sellerSku) {
     errors.push("FBA 用と自社出荷用には、別のセラー SKU を使ってください。");
   }
+  // 自社出荷の作り方（自社出荷・両方のときだけ読む。ほかは今の値のまま）
+  let fbmPlan: FbmPlanInput | undefined;
+  if (fulfillment === "fbm" || fulfillment === "both") {
+    const policy = raw.fbmPolicy === "to_order" ? "to_order" : raw.fbmPolicy === "stock" || raw.fbmPolicy === undefined ? "stock" : null;
+    if (!policy) errors.push("自社出荷の作り方を選んでください。");
+    const int = (v: unknown, fallback: number, max: number, label: string) => {
+      if (v === undefined || v === "") return fallback;
+      const t = String(v).normalize("NFKC").trim();
+      if (!/^\d{1,3}$/.test(t) || Number(t) > max) {
+        errors.push(`${label}は 0〜${max} の数で入れてください。`);
+        return fallback;
+      }
+      return Number(t);
+    };
+    fbmPlan = {
+      policy: policy ?? "stock",
+      stockTarget: int(raw.fbmStockTarget, DEFAULT_FBM_PLAN.stockTarget, 50, "作り置きの台数"),
+      maxToOrder: int(raw.fbmMaxToOrder, DEFAULT_FBM_PLAN.maxToOrder, 20, "注文を受けてから組む台数の上限"),
+    };
+  }
   if (errors.length > 0 || fulfillment === undefined) return { ok: false, errors };
-  return { ok: true, value: { fulfillment, fba, fbm } };
+  return { ok: true, value: { fulfillment, fba, fbm, fbmPlan } };
 }

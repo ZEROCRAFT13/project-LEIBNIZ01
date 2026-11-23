@@ -60,7 +60,12 @@ async function Sku({
 
       <Card title="Amazon の出荷方法と出品">
         <div className="p-5">
-          <AmazonListingsForm skuId={sku.id} fulfillment={sku.amazonFulfillment} listings={sku.listings} />
+          <AmazonListingsForm
+            skuId={sku.id}
+            fulfillment={sku.amazonFulfillment}
+            listings={sku.listings}
+            fbmPlan={{ policy: sku.fbmPolicy, stockTarget: sku.fbmStockTarget, maxToOrder: sku.fbmMaxToOrder }}
+          />
         </div>
       </Card>
 

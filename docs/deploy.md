@@ -101,6 +101,7 @@ app.自社ドメイン.   A   （本番の IP）
    | `ZB_DOMAIN` | `app.自社ドメイン` |
    | `ZB_STORAGE_BUCKET` | `zerobit-prod-123456-files` |
    | `AUTH_ALLOWED_DOMAIN` | 会社の Workspace のドメイン（例 `example.jp`） |
+   | `SP_API_SELLER_ID` | 本番だけ。出品者 ID（セラーセントラル → 設定 → 出品用アカウント情報 →「出品者トークン」）。自社出荷の出品数を反映するのに要る |
    | `ZB_BACKUP_BUCKET` | `zerobit-prod-123456-backup`（手順11。入れるまでバックアップは動かない） |
    | `GCP_BACKUP_SA` | `zb-backup@….iam.gserviceaccount.com`（手順11） |
 

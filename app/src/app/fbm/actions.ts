@@ -19,6 +19,7 @@ import { parseFbmOrderInput } from "@/lib/fbm-calc";
 import { syncAmazonOrders } from "@/lib/amazon/order-sync";
 import { createSpApi, spApiConfigFromEnv } from "@/lib/amazon/sp-api";
 import { sendShipNotice } from "@/lib/fbm-ship";
+import { sendListingQuantities } from "@/lib/fbm-plan";
 
 // 自社出荷の操作。最初に requireManager で「代表・工場長がログインしているか」を確かめる。
 // Amazon に送るのは出荷通知だけで、代表・工場長が画面で中身を見て「この内容で送る」を押したとき（承認）に限る（ルール4）。
@@ -83,6 +84,25 @@ export async function sendShipNoticeAction(_prev: FbmState, formData: FormData):
   const userId = await actor(formData);
   const config = spApiConfigFromEnv();
   return done(await sendShipNotice(userId, idOf(formData), str(formData, "delayReason") || null, config ? createSpApi(config) : null));
+}
+
+/** 画面に出ていた数で（承認して）、自社出荷の出品数を Amazon に反映する。item は「機種の番号:数」 */
+export async function sendListingQtyAction(_prev: FbmState, formData: FormData): Promise<FbmState> {
+  const viewer = await requireManager("/fbm");
+  const want = new Map<number, number>();
+  for (const v of formData.getAll("item")) {
+    const m = String(v).match(/^(\d{1,12}):(\d{1,3})$/);
+    if (m) want.set(Number(m[1]), Number(m[2]));
+  }
+  const config = spApiConfigFromEnv();
+  const r = await sendListingQuantities(
+    viewer.user.id,
+    want,
+    config ? createSpApi(config) : null,
+    process.env.SP_API_SELLER_ID?.trim() || null,
+  );
+  refresh();
+  return { ok: r.ok, message: r.message, at: Date.now() };
 }
 
 export async function cancelAction(_prev: FbmState, formData: FormData): Promise<FbmState> {

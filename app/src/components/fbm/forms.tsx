@@ -7,6 +7,7 @@ import {
   infoAction,
   linkUnitAction,
   notifiedAction,
+  sendListingQtyAction,
   sendShipNoticeAction,
   shipAction,
   syncNowAction,
@@ -357,6 +358,30 @@ export function SyncNowButton({ disabled }: { disabled: boolean }) {
     <form action={action} className="flex flex-col gap-2">
       <button type="submit" disabled={pending || disabled} className={buttonClass}>
         {pending ? "取り込んでいます…" : "Amazon から今すぐ取り込む（直近7日）"}
+      </button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+/** 出品数を Amazon に反映する（承認）。items は画面に出ている数 */
+export function SendListingQtyButton({
+  items,
+  label,
+  disabled,
+}: {
+  items: { skuId: number; qty: number }[];
+  label: string;
+  disabled: boolean;
+}) {
+  const [state, action, pending] = useActionState<FbmState, FormData>(sendListingQtyAction, null);
+  return (
+    <form action={action} className="flex flex-col items-end gap-2">
+      {items.map((i) => (
+        <input key={i.skuId} type="hidden" name="item" value={`${i.skuId}:${i.qty}`} />
+      ))}
+      <button type="submit" disabled={pending || disabled || items.length === 0} className={buttonClass}>
+        {pending ? "Amazon に送っています…" : label}
       </button>
       <Message state={state} />
     </form>

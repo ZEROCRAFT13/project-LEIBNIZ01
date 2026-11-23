@@ -111,7 +111,7 @@ jobs:
             --ingress=internal-and-cloud-load-balancing --no-invoker-iam-check \
             --cpu=1 --memory=1Gi --min-instances=0 --max-instances=3 --timeout=300 \
             --set-secrets="$SECRETS" \
-            --set-env-vars="APP_URL=https://${{ vars.ZB_DOMAIN }},ZB_PUBLIC_URL=https://${{ vars.ZB_DOMAIN }},AUTH_ALLOWED_DOMAIN=${{ vars.AUTH_ALLOWED_DOMAIN }},ZB_STORAGE_BUCKET=${{ vars.ZB_STORAGE_BUCKET }},ZB_BACKUP_EXPECTED=$([ "$BACKUP_ON" = true ] && echo 1 || echo 0)"
+            --set-env-vars="APP_URL=https://${{ vars.ZB_DOMAIN }},ZB_PUBLIC_URL=https://${{ vars.ZB_DOMAIN }},AUTH_ALLOWED_DOMAIN=${{ vars.AUTH_ALLOWED_DOMAIN }},ZB_STORAGE_BUCKET=${{ vars.ZB_STORAGE_BUCKET }},ZB_BACKUP_EXPECTED=$([ "$BACKUP_ON" = true ] && echo 1 || echo 0),SP_API_SELLER_ID=${{ vars.SP_API_SELLER_ID }}"
 
       - name: バックアップのジョブ（1時間ごとに Cloud Scheduler が動かす）
         if: env.BACKUP_ON == 'true'

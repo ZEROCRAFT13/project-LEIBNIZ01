@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { NewOrderForm, SyncNowButton } from "@/components/fbm/forms";
+import { NewOrderForm, SendListingQtyButton, SyncNowButton } from "@/components/fbm/forms";
+import { fbmPolicyLabel } from "@/lib/fbm-plan-calc";
+import { getFbmPlanRows } from "@/lib/fbm-plan";
 import { getSyncHealth } from "@/lib/amazon/order-sync";
 import { spApiConfigFromEnv } from "@/lib/amazon/sp-api";
 import { Card, Loading, Tag } from "@/components/ui";
@@ -17,11 +19,14 @@ export default function FbmPage() {
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-5 px-4 py-8 sm:px-6">
       <h1 className="text-2xl font-bold">自社出荷（Amazon）</h1>
       <p className="text-sm text-stone-600">
-        自社出荷の注文に、出荷待ちの個体を管理番号で結びつけて発送します。送り状はセラーセントラルや運送会社のシステムで作り、出荷通知もセラーセントラルで行います（ここから
-        Amazon には何も送りません）。
+        自社出荷の注文に、出荷待ちの個体を管理番号で結びつけて発送します。送り状はセラーセントラルや運送会社のシステムで作ります。Amazon
+        への出荷通知と出品数の反映は、ここで中身を確かめて承認してから送ります。
       </p>
       <Suspense fallback={<Loading />}>
         <Orders />
+      </Suspense>
+      <Suspense fallback={<Loading />}>
+        <ListingQty />
       </Suspense>
     </main>
   );
@@ -105,5 +110,83 @@ async function Orders() {
         </div>
       </Card>
     </>
+  );
+}
+
+/** 自社出荷の出品数：機種ごとに出す数を計算し、承認して Amazon に反映する */
+async function ListingQty() {
+  await requireManager("/fbm");
+  const configured = spApiConfigFromEnv() !== null;
+  const sellerId = Boolean(process.env.SP_API_SELLER_ID?.trim());
+  const rows = await getFbmPlanRows();
+  const changed = rows.filter((r) => r.changed);
+  const canSend = configured && sellerId;
+  return (
+    <Card title="Amazon の出品数（自社出荷）" aside="承認してから送る">
+      <div className="flex flex-col gap-3 px-5 py-4">
+        {!canSend && (
+          <p className="rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-950">
+            {configured ? "出品者 ID（SP_API_SELLER_ID）" : "SP-API のキー"}
+            が設定されていないので、ここからは送れません。数の計算だけ見られます。
+          </p>
+        )}
+        {rows.length === 0 ? (
+          <p className="text-sm text-stone-600">自社出荷（または両方）で、自社出荷用の出品がある機種がありません。</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[40rem] text-sm">
+              <thead>
+                <tr className="border-b border-stone-300 text-left text-stone-600">
+                  <th className="py-1 pr-3 font-medium">機種</th>
+                  <th className="py-1 pr-3 font-medium">作り方</th>
+                  <th className="py-1 pr-3 font-medium">出す数</th>
+                  <th className="py-1 pr-3 font-medium">最後に送った数</th>
+                  <th className="py-1 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.skuId} className="border-b border-stone-100 align-top last:border-0">
+                    <td className="py-2 pr-3">
+                      <span className="font-mono">{r.skuCode}</span>
+                      <span className="block font-mono text-xs text-stone-600">{r.sellerSku}</span>
+                    </td>
+                    <td className="py-2 pr-3">
+                      {fbmPolicyLabel[r.policy]}
+                      {r.policy === "stock" && <span className="block text-xs text-stone-600">目標 {r.target}台</span>}
+                      {r.shortage > 0 && <Tag tone="amber">あと{r.shortage}台組む</Tag>}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span className="text-lg font-bold">{r.qty}台</span>
+                      <span className="block text-xs text-stone-600">{r.why}</span>
+                    </td>
+                    <td className="py-2 pr-3">
+                      {r.lastQty === null ? "まだ送っていない" : `${r.lastQty}台`}
+                      {r.lastSentAt && <span className="block text-xs text-stone-600">{ymdHm(r.lastSentAt)}</span>}
+                    </td>
+                    <td className="py-2">
+                      {r.changed && (
+                        <SendListingQtyButton items={[{ skuId: r.skuId, qty: r.qty }]} label="この数で反映（承認）" disabled={!canSend} />
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {changed.length > 1 && (
+          <SendListingQtyButton
+            items={changed.map((r) => ({ skuId: r.skuId, qty: r.qty }))}
+            label={`変わった ${changed.length}機種をまとめて反映（承認）`}
+            disabled={!canSend}
+          />
+        )}
+        <p className="text-xs text-stone-600">
+          注文が入ると Amazon は自分で数を減らします。ここで出荷待ちが増えた・部品が入ったときなどに、数を見て反映してください（ずれていると ToDo
+          に出ます）。
+        </p>
+      </div>
+    </Card>
   );
 }

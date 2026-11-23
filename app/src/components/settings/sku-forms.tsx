@@ -515,10 +515,12 @@ export function AmazonListingsForm({
   skuId,
   fulfillment,
   listings,
+  fbmPlan,
 }: {
   skuId: number;
   fulfillment: AmazonFulfillment | null;
   listings: Listing[];
+  fbmPlan: { policy: "stock" | "to_order"; stockTarget: number; maxToOrder: number };
 }) {
   const [state, action, pending] = useActionState<SkuState, FormData>(amazonListingsAction, null);
   const current = (k: "fba" | "fbm") => listings.find((l) => l.fulfillment === k && l.active);
@@ -528,6 +530,9 @@ export function AmazonListingsForm({
     fbaAsin: current("fba")?.asin ?? "",
     fbmSellerSku: current("fbm")?.sellerSku ?? "",
     fbmAsin: current("fbm")?.asin ?? "",
+    fbmPolicy: fbmPlan.policy,
+    fbmStockTarget: String(fbmPlan.stockTarget),
+    fbmMaxToOrder: String(fbmPlan.maxToOrder),
   });
   const needed = neededListings(v.fulfillment === "none" ? null : v.fulfillment);
   const stopped = listings.filter((l) => !l.active);
@@ -616,6 +621,58 @@ export function AmazonListingsForm({
       <p className="text-xs text-stone-600">
         セラー SKU は、セラーセントラルに登録したとおりに書きます（大文字・小文字も同じに）。空にして保存すると、その出品を止めます（記録は残ります）。
       </p>
+      {needed.includes("fbm") && (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1 text-sm font-medium">自社出荷の作り方</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(["stock", "to_order"] as const).map((p) => (
+              <label
+                key={p}
+                className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                  v.fbmPolicy === p ? "border-blue-700 bg-blue-50 font-bold" : "border-stone-300"
+                }`}
+              >
+                <input type="radio" name="fbmPolicy" value={p} checked={v.fbmPolicy === p} onChange={() => setV((x) => ({ ...x, fbmPolicy: p }))} />
+                {p === "stock" ? "作り置き" : "注文を受けてから組む"}
+              </label>
+            ))}
+          </div>
+          {v.fbmPolicy === "stock" ? (
+            <label className="flex w-56 flex-col gap-1 text-sm">
+              作り置きの台数（出荷待ちをこの台数に保つ）
+              <input
+                name="fbmStockTarget"
+                inputMode="numeric"
+                value={v.fbmStockTarget}
+                onChange={(e) => setV((x) => ({ ...x, fbmStockTarget: e.target.value }))}
+                className={`${inputClass} font-mono`}
+              />
+            </label>
+          ) : (
+            <label className="flex w-56 flex-col gap-1 text-sm">
+              部品で組める分を Amazon に出す上限（台）
+              <input
+                name="fbmMaxToOrder"
+                inputMode="numeric"
+                value={v.fbmMaxToOrder}
+                onChange={(e) => setV((x) => ({ ...x, fbmMaxToOrder: e.target.value }))}
+                className={`${inputClass} font-mono`}
+              />
+            </label>
+          )}
+          {/* 選んでいない側の値もそのまま保存する（切り替えて戻すことがあるので） */}
+          {v.fbmPolicy === "stock" ? (
+            <input type="hidden" name="fbmMaxToOrder" value={v.fbmMaxToOrder} />
+          ) : (
+            <input type="hidden" name="fbmStockTarget" value={v.fbmStockTarget} />
+          )}
+          <p className="text-xs text-stone-600">
+            作り置き：Amazon に出す数＝出荷待ちの台数。足りなくなったら工場長の ToDo に組立が入ります。注文を受けてから組む：Amazon
+            に出す数＝出荷待ち＋部品の在庫で組める台数（上限まで）。Amazon のリードタイム（出荷までの日数）はセラーセントラルで長めにしてください。
+            {v.fulfillment === "both" && " 両方の機種は、FBA に在庫があるあいだ自社出荷の数を 0 にします。"}
+          </p>
+        </fieldset>
+      )}
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass}>
           保存

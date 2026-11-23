@@ -62,6 +62,19 @@ export type FbaInventoryApi = {
   getFbaInventory(): Promise<FbaInventoryItem[]>;
 };
 
+/** 自社出荷の出品の数（Listings Items API） */
+export type ListingQtyApi = {
+  /** 出品の商品タイプ（数を変えるときに要る）と、Amazon 側の今の数。ない出品なら null */
+  getListing(sellerId: string, sellerSku: string): Promise<{ productType: string; quantity: number | null } | null>;
+  /** 自社出荷（DEFAULT）の数を変える。ACCEPTED 以外なら問題の番号を返す */
+  setListingQuantity(
+    sellerId: string,
+    sellerSku: string,
+    productType: string,
+    quantity: number,
+  ): Promise<{ status: string; issues: { code: string; severity: string }[] }>;
+};
+
 /** 出荷通知の1箱分（Orders API v0 confirmShipment の packageDetail） */
 export type ShipConfirmPackage = {
   packageReferenceId: string;
@@ -95,12 +108,20 @@ async function errorCode(res: Response): Promise<string | null> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** 出品の URL（セラー ID とセラー SKU は形を確かめてから入れる） */
+function listingPath(sellerId: string, sellerSku: string): string {
+  if (!/^[A-Z0-9]{8,20}$/.test(sellerId)) throw new SpApiError("出品者 ID（SP_API_SELLER_ID）の形がちがいます。", null, null);
+  if (!/^[!-~]{1,40}$/.test(sellerSku)) throw new SpApiError("セラー SKU の形がちがいます。", null, null);
+  return `/listings/2021-08-01/items/${sellerId}/${encodeURIComponent(sellerSku)}`;
+}
+
 export function createSpApi(
   config: SpApiConfig,
   deps: { fetch?: Fetch; sleep?: (ms: number) => Promise<void> } = {},
 ): OrdersApi &
   ShipConfirmApi &
-  FbaInventoryApi & {
+  FbaInventoryApi &
+  ListingQtyApi & {
     getAccessToken(): Promise<string>;
   } {
   const doFetch = deps.fetch ?? fetch;
@@ -150,7 +171,7 @@ export function createSpApi(
    * notFoundOk なら 404 は null を返す
    */
   async function request(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PATCH",
     path: string,
     query: URLSearchParams | null,
     body?: unknown,
@@ -225,6 +246,32 @@ export function createSpApi(
         if (!next) return out;
       }
       throw new SpApiError("FBA の在庫のページが多すぎます。", null, null);
+    },
+    async getListing(sellerId, sellerSku) {
+      const q = new URLSearchParams({ marketplaceIds: JP_MARKETPLACE_ID, includedData: "summaries,fulfillmentAvailability" });
+      const body = (await request("GET", listingPath(sellerId, sellerSku), q, undefined, true)) as {
+        summaries?: { marketplaceId?: string; productType?: string }[];
+        fulfillmentAvailability?: { fulfillmentChannelCode?: string; quantity?: number }[];
+      } | null;
+      if (!body) return null;
+      const productType = body.summaries?.find((x) => x.marketplaceId === JP_MARKETPLACE_ID)?.productType ?? body.summaries?.[0]?.productType;
+      if (!productType) throw new SpApiError("出品の商品タイプが読めません。", null, null);
+      const q2 = body.fulfillmentAvailability?.find((x) => x.fulfillmentChannelCode === "DEFAULT")?.quantity;
+      return { productType, quantity: Number.isInteger(q2) ? (q2 as number) : null };
+    },
+    async setListingQuantity(sellerId, sellerSku, productType, quantity) {
+      if (!Number.isInteger(quantity) || quantity < 0 || quantity > 999) throw new SpApiError("出品数は 0〜999 の整数にしてください。", null, null);
+      const q = new URLSearchParams({ marketplaceIds: JP_MARKETPLACE_ID, issueLocale: "ja_JP" });
+      const body = (await request("PATCH", listingPath(sellerId, sellerSku), q, {
+        productType,
+        patches: [
+          { op: "replace", path: "/attributes/fulfillment_availability", value: [{ fulfillment_channel_code: "DEFAULT", quantity }] },
+        ],
+      })) as { status?: string; issues?: { code?: string; severity?: string }[] } | null;
+      return {
+        status: String(body?.status ?? ""),
+        issues: (body?.issues ?? []).map((i) => ({ code: String(i.code ?? ""), severity: String(i.severity ?? "") })),
+      };
     },
     async getOrder(orderNo) {
       if (!/^\d{3}-\d{7}-\d{7}$/.test(orderNo)) throw new SpApiError("注文番号の形がちがいます。", null, null);

@@ -26,6 +26,9 @@ export type SkuRow = {
   emptySlots: number;
   openUnits: number;
   amazonFulfillment: AmazonFulfillment | null;
+  fbmPolicy: "stock" | "to_order";
+  fbmStockTarget: number;
+  fbmMaxToOrder: number;
   /** 出荷方法で要るのに、まだ登録していない出品の数 */
   missingListings: number;
 };
@@ -36,6 +39,7 @@ const SKU_COLUMNS = `k.id, k.code, k.name, k.list_price AS "listPrice", k.active
       AND NOT EXISTS (SELECT 1 FROM core.sku_slot_options o WHERE o.slot_id = s.id))::int AS "emptySlots",
   (SELECT count(*) FROM core.units u WHERE u.sku_id = k.id AND u.status IN ('planned', 'assembling'))::int AS "openUnits",
   k.amazon_fulfillment AS "amazonFulfillment",
+  k.fbm_policy AS "fbmPolicy", k.fbm_stock_target AS "fbmStockTarget", k.fbm_max_to_order AS "fbmMaxToOrder",
   (SELECT count(*) FROM unnest(CASE k.amazon_fulfillment WHEN 'both' THEN ARRAY['fba', 'fbm']
                                                          WHEN 'fba' THEN ARRAY['fba'] WHEN 'fbm' THEN ARRAY['fbm']
                                                          ELSE ARRAY[]::text[] END) AS need(f)
@@ -295,7 +299,14 @@ export async function slotsForPartModel(partModelId: number): Promise<{
  */
 export async function setAmazonListings(actorId: number, skuId: number, input: AmazonInput): Promise<SkuResult> {
   return run(actorId, async (client) => {
-    const sku = await client.query(`UPDATE core.skus SET amazon_fulfillment = $2 WHERE id = $1`, [skuId, input.fulfillment]);
+    const plan = input.fbmPlan;
+    const sku =
+      plan && (input.fulfillment === "fbm" || input.fulfillment === "both")
+        ? await client.query(
+            `UPDATE core.skus SET amazon_fulfillment = $2, fbm_policy = $3, fbm_stock_target = $4, fbm_max_to_order = $5 WHERE id = $1`,
+            [skuId, input.fulfillment, plan.policy, plan.stockTarget, plan.maxToOrder],
+          )
+        : await client.query(`UPDATE core.skus SET amazon_fulfillment = $2 WHERE id = $1`, [skuId, input.fulfillment]);
     if (sku.rowCount !== 1) throw new SkuError("機種が見つかりません。");
     for (const kind of ["fba", "fbm"] as const) {
       const wanted = input[kind];
