@@ -18,9 +18,10 @@ import {
 import { parseFbmOrderInput } from "@/lib/fbm-calc";
 import { syncAmazonOrders } from "@/lib/amazon/order-sync";
 import { createSpApi, spApiConfigFromEnv } from "@/lib/amazon/sp-api";
+import { sendShipNotice } from "@/lib/fbm-ship";
 
 // 自社出荷の操作。最初に requireManager で「代表・工場長がログインしているか」を確かめる。
-// ここから Amazon には何も送らない（出荷通知はセラーセントラルで人が行い、その記録だけ残す）。
+// Amazon に送るのは出荷通知だけで、代表・工場長が画面で中身を見て「この内容で送る」を押したとき（承認）に限る（ルール4）。
 
 export type FbmState = { ok: boolean; message: string; at: number } | null;
 
@@ -75,6 +76,13 @@ export async function shipAction(_prev: FbmState, formData: FormData): Promise<F
 
 export async function notifiedAction(_prev: FbmState, formData: FormData): Promise<FbmState> {
   return done(await markShipNotified(await actor(formData), idOf(formData), str(formData, "delayReason") || null));
+}
+
+/** 中身を確かめて（承認して）、Amazon に出荷通知を送る */
+export async function sendShipNoticeAction(_prev: FbmState, formData: FormData): Promise<FbmState> {
+  const userId = await actor(formData);
+  const config = spApiConfigFromEnv();
+  return done(await sendShipNotice(userId, idOf(formData), str(formData, "delayReason") || null, config ? createSpApi(config) : null));
 }
 
 export async function cancelAction(_prev: FbmState, formData: FormData): Promise<FbmState> {

@@ -39,7 +39,7 @@ describe("自社出荷のタスクの次にやること", () => {
   it("結びつけ → 発送 → 出荷通知", () => {
     expect(orderNextStep(base)).toEqual({ text: "個体を結びつける（あと 2台）", warn: false });
     expect(orderNextStep({ ...base, linked: 2 })).toEqual({ text: "送り状番号を入れて発送する", warn: false });
-    expect(orderNextStep({ ...base, linked: 2, shipped: true })).toEqual({ text: "セラーセントラルで出荷通知をする", warn: false });
+    expect(orderNextStep({ ...base, linked: 2, shipped: true })).toEqual({ text: "Amazon に出荷通知を送る", warn: false });
   });
 
   it("出せる個体が足りなければ、組立・検品を急ぐように出す", () => {

@@ -87,3 +87,41 @@ describe("注文を取る", () => {
     await expect(api.getAccessToken()).rejects.toMatchObject({ code: "network", message: expect.stringContaining("接続できませんでした") });
   });
 });
+
+describe("出荷通知", () => {
+  const pkg = {
+    packageReferenceId: "1",
+    carrierCode: "Yamato Transport",
+    trackingNumber: "1234-5678-9012",
+    shipDate: "2026-11-16T03:00:00.000Z",
+    orderItems: [{ orderItemId: "ITEM0", quantity: 1 }],
+  };
+
+  it("注文を1件取る（出荷の情報だけ）。ない注文は null", async () => {
+    const { f, calls } = fakeFetch([token, json({ order: fakeOrder({ orderId: "503-1000000-0000009" }) }), json({ errors: [{ code: "NotFound" }] }, 404)]);
+    const api = createSpApi(config, { fetch: f, sleep: async () => {} });
+    expect((await api.getOrder("503-1000000-0000009"))?.orderId).toBe("503-1000000-0000009");
+    expect(calls[1].url).toBe("https://sp.example/orders/2026-01-01/orders/503-1000000-0000009?includedData=FULFILLMENT");
+    expect(await api.getOrder("503-1000000-0000008")).toBeNull();
+  });
+
+  it("v0 の shipmentConfirmation に、日本のマーケットプレイスと1箱分を POST する（204 で成功）", async () => {
+    const { f, calls } = fakeFetch([token, () => new Response(null, { status: 204 })]);
+    const api = createSpApi(config, { fetch: f, sleep: async () => {} });
+    await api.confirmShipment("503-1000000-0000009", pkg);
+    expect(calls[1].url).toBe("https://sp.example/orders/v0/orders/503-1000000-0000009/shipmentConfirmation");
+    expect(calls[1].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ marketplaceId: "A1VC38T7YXB528", packageDetail: pkg });
+    expect((calls[1].init?.headers as Record<string, string>)["content-type"]).toBe("application/json");
+  });
+
+  it("失敗したら番号と種類だけを伝える。注文番号の形がちがえば送らない", async () => {
+    const { f, calls } = fakeFetch([token, json({ errors: [{ code: "InvalidInput", message: "お客様の住所…" }] }, 400)]);
+    const api = createSpApi(config, { fetch: f, sleep: async () => {} });
+    const e = await api.confirmShipment("503-1000000-0000009", pkg).catch((x) => x);
+    expect(e).toBeInstanceOf(SpApiError);
+    expect(e.message).toBe("Amazon への送信に失敗しました（400 InvalidInput）。");
+    await expect(api.confirmShipment("../../x", pkg)).rejects.toThrow(/形がちがいます/);
+    expect(calls).toHaveLength(2);
+  });
+});
