@@ -1,5 +1,6 @@
 // FBA の補充：在庫・販売ペースから、欠品しそうな日・組立を始める期限・補充の目安を出す（計算だけ。ルール5）
 //   在庫（supply）    = 販売できる数 + これから販売できるようになる数（納品の作業中・輸送中・受領中、倉庫の処理中）
+//                      + このシステムで組立中・検品中・出荷待ちの個体（まだ FBA の納品にも自社出荷の注文にも入れていないもの）
 //   1日の販売ペース   = 直近 windowDays 日（今日は途中なので入れない）に売れた台数 ÷ windowDays
 //   残り日数          = 在庫 ÷ 1日の販売ペース（切り捨て）
 //   欠品しそうな日    = 今日 + 残り日数
@@ -38,10 +39,10 @@ export function diffDays(a: string, b: string): number {
 }
 
 export function restockPlan(
-  input: { fulfillable: number; inbound: number; soldInWindow: number; today: string },
+  input: { fulfillable: number; inbound: number; pipeline?: number; soldInWindow: number; today: string },
   s: RestockSettings = DEFAULT_RESTOCK,
 ): RestockPlan {
-  const supply = Math.max(0, input.fulfillable) + Math.max(0, input.inbound);
+  const supply = Math.max(0, input.fulfillable) + Math.max(0, input.inbound) + Math.max(0, input.pipeline ?? 0);
   const perDayRaw = s.windowDays > 0 ? Math.max(0, input.soldInWindow) / s.windowDays : 0;
   const perDay = Math.round(perDayRaw * 100) / 100;
   if (perDayRaw === 0) {
@@ -54,6 +55,11 @@ export function restockPlan(
   const until = diffDays(input.today, startBy);
   const level: RestockLevel = until <= 0 ? "late" : until <= s.warnDays ? "soon" : "ok";
   return { supply, perDay, daysLeft, stockoutDate, startBy, suggestQty, level };
+}
+
+/** 組立を始める期限の日の終わり（日本時間 23:59:59）。ToDo の期限にする */
+export function endOfJstDay(ymd: string): Date {
+  return new Date(`${ymd}T23:59:59+09:00`);
 }
 
 /** FBA Inventory API の1行 → 販売できる数・これから販売できるようになる数・売れて出荷待ち・販売不可 */

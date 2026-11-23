@@ -1,6 +1,6 @@
 // FBA の補充の計算（DB を使わない）
 import { describe, expect, it } from "vitest";
-import { addDays, diffDays, fbaQuantities, restockPlan } from "@/lib/fba-restock-calc";
+import { addDays, diffDays, endOfJstDay, fbaQuantities, restockPlan } from "@/lib/fba-restock-calc";
 
 const s = { leadDays: 10, windowDays: 14, coverDays: 30, warnDays: 3 };
 const today = "2026-11-23";
@@ -50,6 +50,20 @@ describe("組立を始める期限", () => {
 
   it("在庫が十分なら補充の目安は 0", () => {
     expect(restockPlan({ fulfillable: 100, inbound: 0, soldInWindow: 14, today }, s).suggestQty).toBe(0);
+  });
+
+  it("ここで組立中・出荷待ちの個体も在庫に足す（二重に組み立てないように）", () => {
+    expect(restockPlan({ fulfillable: 10, inbound: 0, pipeline: 6, soldInWindow: 14, today }, s)).toMatchObject({
+      supply: 16,
+      daysLeft: 16,
+      startBy: "2026-11-29",
+      level: "ok",
+      suggestQty: 24,
+    });
+  });
+
+  it("ToDo の期限は、組立を始める期限の日の終わり（日本時間）", () => {
+    expect(endOfJstDay("2026-12-03").toISOString()).toBe("2026-12-03T14:59:59.000Z");
   });
 
   it("日付の足し引き（月・年をまたぐ）", () => {

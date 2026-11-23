@@ -99,13 +99,52 @@ describe("取り込む（テスト用 DB）", () => {
     expect(m).toEqual({ units: 19, amount: 199800 * 19 });
 
     const { rows } = await getRestockRows(now);
+    // 組立中・出荷待ちの個体（ほかのテストで作ったもの）も在庫に足して数える
     const r5row = rows.find((x) => x.skuId === r5)!;
-    // 今日の5台は数えない（途中なので）。1日1台、在庫0 → 今日なくなる。期限は10日前＝今すぐ
-    expect(r5row).toMatchObject({ fulfillable: 0, inbound: 0, perDay: 1, daysLeft: 0, level: "late", suggestQty: 40 });
+    // 今日の5台は数えない（途中なので）。1日1台
+    expect(r5row).toMatchObject({ fulfillable: 0, inbound: 0, perDay: 1, supply: r5row.pipeline, daysLeft: r5row.pipeline });
+    expect(r5row.suggestQty).toBe(Math.max(0, 40 - r5row.pipeline));
     const r7row = rows.find((x) => x.skuId === r7)!;
-    // 1日0.5台、在庫5 → 10日でなくなる → 期限は今日
-    expect(r7row).toMatchObject({ fulfillable: 4, inbound: 1, perDay: 0.5, daysLeft: 10, startBy: today, level: "late", suggestQty: 15 });
-    expect(rows[0].level).toBe("late");
+    // 1日0.5台、在庫5＋組立中・出荷待ち
+    expect(r7row).toMatchObject({ fulfillable: 4, inbound: 1, perDay: 0.5, supply: 5 + r7row.pipeline });
+    expect(r7row.daysLeft).toBe(Math.floor((5 + r7row.pipeline) / 0.5));
+    expect(r7row.startBy).toBe(addDays(today, r7row.daysLeft! - 10));
+  });
+
+  it("期限が近い機種は工場長の ToDo になり、足りたら自動で閉じる", async () => {
+    // R5 の組立中・出荷待ちの数に合わせて、確実に「今すぐ」になる売れ方にする（1日 その数＋1 台）
+    const { rows } = await getRestockRows(now);
+    const pipeline = rows.find((x) => x.skuId === r5)!.pipeline;
+    const perDay = pipeline + 1;
+    const selling = {
+      async getFbaInventory() {
+        return [];
+      },
+      async searchOrders() {
+        return Array.from({ length: 14 }, (_, i) =>
+          fakeOrder({ orderId: `503-0000008-00004${String(i).padStart(2, "0")}`, createdTime: daysAgo(i + 1), fulfilledBy: "AMAZON", items: [{ sellerSku: "ZB-G5060-R5-FBA", qty: perDay, unitPrice: "1.00" }] }),
+        );
+      },
+    };
+    const r = await syncFbaInventory(selling, "incremental", now);
+    expect(r).toMatchObject({ ok: true });
+    const task = async () =>
+      (
+        await query<{ title: string; status: string; role_code: string; due_at: Date; delay_reason: string | null }>(
+          `SELECT title, status, role_code, due_at, delay_reason FROM core.tasks WHERE source_ref = $1 ORDER BY id DESC LIMIT 1`,
+          [`fba-restock:sku:${r5}`],
+        )
+      )[0];
+    expect(await task()).toMatchObject({ title: "FBA 補充：ZB-G5060-R5 の組立を始める", status: "todo", role_code: "factory_manager" });
+    // 2回目は作らない
+    const again = await syncFbaInventory(selling, "incremental", now);
+    expect(again.ok && again.summary.tasks?.created).toBe(0);
+    // 在庫が十分に入ったら閉じる（期限を過ぎていれば理由つき）
+    const stocked = { ...selling, async getFbaInventory() { return [inv("ZB-G5060-R5-FBA", 500)]; } };
+    const r3 = await syncFbaInventory(stocked, "incremental", now);
+    expect(r3.ok && r3.summary.tasks?.closed).toBeGreaterThanOrEqual(1);
+    const t = await task();
+    expect(t.status).toBe("done");
   });
 
   it("取り消しが増えたら、次の取り込みで販売が減る（期間を作り直す）", async () => {
