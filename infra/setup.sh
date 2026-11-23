@@ -316,13 +316,13 @@ fi
 ok "毎時7分"
 
 if [[ "$ENV_NAME" == prod ]]; then
-  say "5分ごとの注文の取り込み（Cloud Scheduler）"
+  say "Amazon からの定期の取り込み（Cloud Scheduler：注文は5分ごと、FBA の在庫と販売は1時間ごと）"
   JOB_SECRET=$(gcloud secrets versions access latest --secret=zb-job-secret)
-  make_job() { # 名前 スケジュール モード
+  make_job() { # 名前 スケジュール 呼ぶ先（/api/jobs/… のあと）
     # 合言葉（Bearer）を入れる引数は、作るときは --headers、直すときは --update-headers（名前が違う）。
     # 引数の間違いで gcloud が合言葉を画面に出さないよう、エラーの表示は捨てて、こちらの文だけを出す
     local args=(--location="$REGION" --schedule="$2" --time-zone="Asia/Tokyo" --http-method=POST
-      --uri="https://${DOMAIN}/api/jobs/amazon-orders?mode=$3" --attempt-deadline=300s)
+      --uri="https://${DOMAIN}/api/jobs/$3" --attempt-deadline=300s)
     local header="Authorization=Bearer ${JOB_SECRET}"
     if gcloud scheduler jobs describe "$1" --location="$REGION" >/dev/null 2>&1; then
       gcloud scheduler jobs update http "$1" "${args[@]}" --update-headers="$header" >/dev/null 2>&1 ||
@@ -332,9 +332,10 @@ if [[ "$ENV_NAME" == prod ]]; then
         { echo "  ✗ $1 を作れませんでした（gcloud scheduler jobs create http）"; exit 1; }
     fi
   }
-  make_job amazon-orders "*/5 * * * *" incremental
-  make_job amazon-orders-reconcile "40 4 * * *" reconcile
-  ok "5分ごと・毎日 4:40 の照合"
+  make_job amazon-orders "*/5 * * * *" "amazon-orders?mode=incremental"
+  make_job amazon-orders-reconcile "40 4 * * *" "amazon-orders?mode=reconcile"
+  make_job amazon-fba "17 * * * *" "amazon-fba"
+  ok "注文：5分ごと・毎日 4:40 の照合／FBA の在庫と販売：毎時17分"
 fi
 
 cat <<DONE

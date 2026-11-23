@@ -125,3 +125,24 @@ describe("出荷通知", () => {
     expect(calls).toHaveLength(2);
   });
 });
+
+describe("FBA の在庫", () => {
+  it("日本のマーケットプレイスの在庫を、明細つきでページをたどって全部取る", async () => {
+    const { f, calls } = fakeFetch([
+      token,
+      json({ payload: { inventorySummaries: [{ sellerSku: "A-FBA", inventoryDetails: { fulfillableQuantity: 3 } }] }, pagination: { nextToken: "N2" } }),
+      json({ payload: { inventorySummaries: [{ sellerSku: "B-FBA" }] } }),
+    ]);
+    const api = createSpApi(config, { fetch: f, sleep: async () => {} });
+    expect((await api.getFbaInventory()).map((i) => i.sellerSku)).toEqual(["A-FBA", "B-FBA"]);
+    const first = new URL(calls[1].url);
+    expect(first.pathname).toBe("/fba/inventory/v1/summaries");
+    expect(Object.fromEntries(first.searchParams)).toEqual({
+      details: "true",
+      granularityType: "Marketplace",
+      granularityId: "A1VC38T7YXB528",
+      marketplaceIds: "A1VC38T7YXB528",
+    });
+    expect(new URL(calls[2].url).searchParams.get("nextToken")).toBe("N2");
+  });
+});
