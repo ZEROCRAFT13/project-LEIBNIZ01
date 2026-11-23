@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@google-cloud/storage": "^7.22.0",
-    "next": "16.4.3",
+    "next": "16.4.6",
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
@@ -27,7 +27,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.4.3",
+    "eslint-config-next": "16.4.6",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "typescript": "^5",
