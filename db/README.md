@@ -28,8 +28,9 @@ PostgreSQL 16 用の定義です。仕様書9章「主要データ」を表に�
 | `migrations/0020_restore_test.sql` | 毎月の復元の試験の記録（integration_runs の `restore_test`。戻したバックアップ・表の数・行数・合わなかった表の名前だけ） |
 | `migrations/0021_outbound_actions.sql` | 外に出る操作の記録（outbound_actions：承認した中身・承認した人・送れたか。消せない・終わったら変えられない）。まずは Amazon への出荷通知。注文の `ship_notified_via`（セラーセントラル／SP-API） |
 | `migrations/0022_fba_inventory_sync.sql` | FBA の在庫と販売ペースの取り込みの記録（integration_runs の `amazon_fba`）。組立から FBA 受領までを10日に、補充の目安（`fba_cover_days`＝30日分）と「もうすぐ」の日数（`fba_warn_days`＝3日）の設定 |
+| `migrations/0023_fbm_stock_policy.sql` | 自社出荷の作り方（`skus.fbm_policy`：作り置き／注文を受けてから組む、作り置きの台数、組める分を出す上限）。外に出る操作の記録に、出品数の反映（`amazon_listing_qty`・相手は機種）を足す |
 | `seeds/` | 開発用のダミーデータ（`npm run db:seed`） |
-| `tests/schema_test.sql` | 動作確認（216項目）。最後に `ALL TESTS PASSED` と出れば成功 |
+| `tests/schema_test.sql` | 動作確認（220項目）。最後に `ALL TESTS PASSED` と出れば成功 |
 
 ## 本番・検証でのマイグレーション
 

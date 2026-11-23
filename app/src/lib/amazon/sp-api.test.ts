@@ -146,3 +146,43 @@ describe("FBA の在庫", () => {
     expect(new URL(calls[2].url).searchParams.get("nextToken")).toBe("N2");
   });
 });
+
+describe("出品数", () => {
+  it("出品の商品タイプと今の自社出荷の数を読む。ない出品は null", async () => {
+    const { f, calls } = fakeFetch([
+      token,
+      json({ summaries: [{ marketplaceId: "A1VC38T7YXB528", productType: "PERSONAL_COMPUTER" }], fulfillmentAvailability: [{ fulfillmentChannelCode: "DEFAULT", quantity: 2 }] }),
+      json({ errors: [{ code: "NOT_FOUND" }] }, 404),
+    ]);
+    const api = createSpApi(config, { fetch: f, sleep: async () => {} });
+    expect(await api.getListing("A1SELLER0TEST", "ZB-X/FBM")).toEqual({ productType: "PERSONAL_COMPUTER", quantity: 2 });
+    expect(calls[1].url).toBe(
+      "https://sp.example/listings/2021-08-01/items/A1SELLER0TEST/ZB-X%2FFBM?marketplaceIds=A1VC38T7YXB528&includedData=summaries%2CfulfillmentAvailability",
+    );
+    expect(await api.getListing("A1SELLER0TEST", "ZB-NONE")).toBeNull();
+  });
+
+  it("自社出荷（DEFAULT）の数だけを PATCH で替える。受け付けなかったら問題の番号を返す", async () => {
+    const { f, calls } = fakeFetch([token, json({ status: "ACCEPTED", issues: [] }), json({ status: "INVALID", issues: [{ code: "90220", severity: "ERROR", message: "…" }] })]);
+    const api = createSpApi(config, { fetch: f, sleep: async () => {} });
+    expect(await api.setListingQuantity("A1SELLER0TEST", "ZB-X", "PERSONAL_COMPUTER", 3)).toEqual({ status: "ACCEPTED", issues: [] });
+    expect(calls[1].init?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({
+      productType: "PERSONAL_COMPUTER",
+      patches: [{ op: "replace", path: "/attributes/fulfillment_availability", value: [{ fulfillment_channel_code: "DEFAULT", quantity: 3 }] }],
+    });
+    expect(await api.setListingQuantity("A1SELLER0TEST", "ZB-X", "PERSONAL_COMPUTER", 1)).toEqual({
+      status: "INVALID",
+      issues: [{ code: "90220", severity: "ERROR" }],
+    });
+  });
+
+  it("出品者 ID・セラー SKU・数の形がおかしければ送らない", async () => {
+    const { f, calls } = fakeFetch([token]);
+    const api = createSpApi(config, { fetch: f, sleep: async () => {} });
+    await expect(api.getListing("../x", "ZB-X")).rejects.toThrow(/出品者 ID/);
+    await expect(api.setListingQuantity("A1SELLER0TEST", "ZB X", "PC", 1)).rejects.toThrow(/セラー SKU/);
+    await expect(api.setListingQuantity("A1SELLER0TEST", "ZB-X", "PC", -1)).rejects.toThrow(/0〜999/);
+    expect(calls).toHaveLength(0);
+  });
+});

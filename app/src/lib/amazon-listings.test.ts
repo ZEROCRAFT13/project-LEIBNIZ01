@@ -128,3 +128,21 @@ describe("保存（ダミーデータの DB）", () => {
     expect(rows.find((s) => s.code === "ZB-G5070-R7")).toMatchObject({ amazonFulfillment: "both", missingListings: 0 });
   });
 });
+
+describe("自社出荷の作り方", () => {
+  it("自社出荷・両方のときだけ読む。作り置きの台数と、注文を受けてから組む上限", () => {
+    expect(parseAmazonInput({ fulfillment: "fbm", fbmPolicy: "to_order", fbmStockTarget: "１", fbmMaxToOrder: "3" })).toMatchObject({
+      ok: true,
+      value: { fbmPlan: { policy: "to_order", stockTarget: 1, maxToOrder: 3 } },
+    });
+    expect(parseAmazonInput({ fulfillment: "both" })).toMatchObject({ ok: true, value: { fbmPlan: { policy: "stock", stockTarget: 1, maxToOrder: 2 } } });
+    const fba = parseAmazonInput({ fulfillment: "fba", fbmPolicy: "to_order" });
+    expect(fba.ok && fba.value.fbmPlan).toBeUndefined();
+  });
+
+  it("おかしな値は断る", () => {
+    expect(parseAmazonInput({ fulfillment: "fbm", fbmPolicy: "dropship" })).toMatchObject({ ok: false });
+    expect(parseAmazonInput({ fulfillment: "fbm", fbmStockTarget: "51" })).toMatchObject({ ok: false, errors: [expect.stringContaining("0〜50")] });
+    expect(parseAmazonInput({ fulfillment: "fbm", fbmMaxToOrder: "-1" })).toMatchObject({ ok: false });
+  });
+});

@@ -970,4 +970,20 @@ SELECT pg_temp.check(
   '組立から受領までは10日、補充は30日分を目安にする');
 RESET ROLE;
 
+-- ---------- 自社出荷の作り方と出品数の反映（0023_fbm_stock_policy） ----------
+SET ROLE zb_app;
+SELECT pg_temp.check(
+  (SELECT fbm_policy = 'stock' AND fbm_stock_target = 1 AND fbm_max_to_order = 2 FROM core.skus WHERE code = 'ZB-G5070-R7'),
+  '自社出荷の作り方は、はじめは作り置き1台（注文を受けてから組むなら2台まで）');
+UPDATE core.skus SET fbm_policy = 'to_order', fbm_max_to_order = 3 WHERE code = 'ZB-G5070-R7';
+SELECT pg_temp.expect_error($$UPDATE core.skus SET fbm_policy = 'dropship' WHERE code = 'ZB-G5070-R7'$$, '決まっていない作り方');
+SELECT pg_temp.expect_error($$UPDATE core.skus SET fbm_stock_target = -1 WHERE code = 'ZB-G5070-R7'$$, '作り置きの台数がマイナス');
+INSERT INTO core.outbound_actions (kind, subject_type, subject_id, payload, approved_by)
+  VALUES ('amazon_listing_qty', 'sku', 1, '{"sellerSku": "ZB-G5070-R7-FBM", "quantity": 2}', 1);
+SELECT pg_temp.expect_error(
+  $$INSERT INTO core.outbound_actions (kind, subject_type, subject_id, payload, approved_by) VALUES ('amazon_listing_qty', 'customer', 1, '{}', 1)$$,
+  '決まっていない相手への送信');
+UPDATE core.skus SET fbm_policy = 'stock', fbm_max_to_order = 2 WHERE code = 'ZB-G5070-R7';
+RESET ROLE;
+
 \echo ALL TESTS PASSED
